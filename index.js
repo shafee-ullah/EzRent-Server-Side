@@ -2,7 +2,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -27,6 +27,7 @@ async function run() {
      await client.connect();
     
     const  propertiesCollection = client.db("ezrent").collection("properties");
+    const  bookinghotelCollection = client.db("ezrent").collection("bookingdata");
 
   //  get api 
    app.get("/properties",async(req,res) =>{
@@ -39,6 +40,20 @@ async function run() {
 rating:-1}).limit(8).toArray();
      res.send(cursor)
    })
+
+   app.get('/FeaturepropertiesDitels/:id',async(req,res)=>{
+    const id = req.params.id;
+    const query ={_id: new ObjectId(id)}
+    const result= await propertiesCollection.findOne(query)
+    res.send(result)
+})
+  // booking data post 
+  app.post("/bookinghotel", async (req, res) => {
+  const newProperty = req.body;
+  console.log(newProperty)
+  const result = await bookinghotelCollection.insertOne(newProperty);
+  res.send(result);
+});
  
 
     // Send a ping to confirm a successful connection
