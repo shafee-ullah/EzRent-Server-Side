@@ -49,7 +49,7 @@ rating:-1}).limit(8).toArray();
     res.send(result)
 })
   // booking data post 
-  app.post("/bookinghotel", async (req, res) => {
+  app.post("/bookinghotel", async (req, res) => { 
   const newProperty = req.body;
   console.log(newProperty)
   const result = await bookinghotelCollection.insertOne(newProperty);
