@@ -28,13 +28,11 @@ async function run() {
     await client.connect();
 
     const propertiesCollection = client.db("ezrent").collection("properties");
-    const bookinghotelCollection = client.db("ezrent").collection("bookingdata");
+    const bookinghotelCollection = client
+      .db("ezrent")
+      .collection("bookingdata");
     const usersCollection = client.db("ezrent").collection("users");
     const hostRequestCollection = client.db("ezrent").collection("hostRequest");
-
-
-
-
 
     // Register new user
     app.post("/users", async (req, res) => {
@@ -54,19 +52,23 @@ async function run() {
 
         // Insert new user
         const result = await usersCollection.insertOne({ name, email, role });
-        res.status(201).send({ message: "User registered successfully", userId: result.insertedId });
+        res
+          .status(201)
+          .send({
+            message: "User registered successfully",
+            userId: result.insertedId,
+          });
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Server error" });
       }
     });
 
-
     // get users
     app.get("/users", async (req, res) => {
       const user = await usersCollection.find().toArray();
-      res.send(user)
-    })
+      res.send(user);
+    });
 
     // ✅ Recommended approach
     app.get("/api/users", async (req, res) => {
@@ -75,7 +77,6 @@ async function run() {
       if (!user) return res.status(404).send("User not found");
       res.json(user);
     });
-
 
     // Get single user by email
     app.get("/users/:email", async (req, res) => {
@@ -94,50 +95,60 @@ async function run() {
       }
     });
 
-
     // host req post
     app.post("/hostRequest", async (req, res) => {
       const newHost = req.body;
       const result = await hostRequestCollection.insertOne(newHost);
-      res.send(result)
-    })
-
+      res.send(result);
+    });
 
     // host req get
     app.get("/hostRequest", async (req, res) => {
       const allReq = await hostRequestCollection.find().toArray();
-      res.send(allReq)
-    })
+      res.send(allReq);
+    });
 
-
-
-    //  get api 
+    //  get api
     app.get("/properties", async (req, res) => {
       const cursor = await propertiesCollection.find().toArray();
-      res.send(cursor)
-    })
-    //git api  limit 8 data  home page 
+      res.send(cursor);
+    });
+    //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find().sort({
-        rating: -1
-      }).limit(8).toArray();
-      res.send(cursor)
+      const cursor = await propertiesCollection
+        .find().limit(8)
+        .toArray();
+      res.send(cursor);
+    });
+
+    app.get("/FeaturepropertiesDitels/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await propertiesCollection.findOne(query);
+      res.send(result);
+    });
+    //  guest booking data get api
+    app.get("/bookinghotel",async(req,res)=>{
+      const booking = await bookinghotelCollection.find().toArray();
+      res.send(booking);
     })
 
-    app.get('/FeaturepropertiesDitels/:id', async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) }
-      const result = await propertiesCollection.findOne(query)
-      res.send(result)
-    })
-    // booking data post 
+ 
+
+    // booking data post
     app.post("/bookinghotel", async (req, res) => {
       const newProperty = req.body;
-      console.log(newProperty)
+      // console.log(newProperty);
       const result = await bookinghotelCollection.insertOne(newProperty);
       res.send(result);
     });
-
+     // host Add property
+       app.post("/AddProperty", async (req, res) => {
+      const AddProperty = req.body;
+      // console.log(newProperty);
+      const result = await propertiesCollection.insertOne(AddProperty);
+      res.send(result);
+    });
 
     //  Update user role (host/guest)
     app.patch("/users/role/:id", async (req, res) => {
@@ -165,7 +176,8 @@ async function run() {
         const id = req.params.id;
         const { status } = req.body;
 
-        if (!status) return res.status(400).send({ message: "Status is required" });
+        if (!status)
+          return res.status(400).send({ message: "Status is required" });
 
         const result = await hostRequestCollection.updateOne(
           { _id: new ObjectId(id) },
@@ -178,8 +190,6 @@ async function run() {
         res.status(500).send({ message: "Server error" });
       }
     });
-
-
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
