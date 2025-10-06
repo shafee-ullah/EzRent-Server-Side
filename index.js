@@ -128,12 +128,12 @@ async function run() {
       res.send(result);
     });
     //  guest booking data get api
-    app.get("/bookinghotel",async(req,res)=>{
+    app.get("/bookinghotel", async (req, res) => {
       const booking = await bookinghotelCollection.find().toArray();
       res.send(booking);
     })
 
- 
+
 
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
@@ -142,54 +142,80 @@ async function run() {
       const result = await bookinghotelCollection.insertOne(newProperty);
       res.send(result);
     });
-     // host Add property
-       app.post("/AddProperty", async (req, res) => {
+    // host Add property
+    app.post("/AddProperty", async (req, res) => {
       const AddProperty = req.body;
       // console.log(newProperty);
       const result = await propertiesCollection.insertOne(AddProperty);
       res.send(result);
     });
 
-    //  Update user role (host/guest)
+    // Update role in both collections safely
     app.patch("/users/role/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const { role } = req.body;
-
         if (!role) return res.status(400).send({ message: "Role is required" });
 
-        const result = await hostRequestCollection.updateOne(
+        // Update in usersCollection
+        const resultUsers = await usersCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: { role } }
         );
 
-        res.send(result);
+        // Update in hostRequestCollection
+        const resultHost = await hostRequestCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { role } }
+        );
+
+        if (resultUsers.matchedCount === 0 && resultHost.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found in any collection" });
+        }
+
+        res.send({
+          message: "Role updated",
+          usersUpdated: resultUsers.matchedCount,
+          hostRequestsUpdated: resultHost.matchedCount,
+        });
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Server error" });
       }
     });
 
-    //  Update user status (reject, active, etc.)
+    // Update status in both collections safely
     app.patch("/users/status/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const { status } = req.body;
+        if (!status) return res.status(400).send({ message: "Status is required" });
 
-        if (!status)
-          return res.status(400).send({ message: "Status is required" });
-
-        const result = await hostRequestCollection.updateOne(
+        const resultUsers = await usersCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: { status } }
         );
 
-        res.send(result);
+        const resultHost = await hostRequestCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } }
+        );
+
+        if (resultUsers.matchedCount === 0 && resultHost.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found in any collection" });
+        }
+
+        res.send({
+          message: "Status updated",
+          usersUpdated: resultUsers.matchedCount,
+          hostRequestsUpdated: resultHost.matchedCount,
+        });
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Server error" });
       }
     });
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
