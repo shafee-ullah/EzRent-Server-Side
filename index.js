@@ -131,7 +131,7 @@ async function run() {
     app.get("/bookinghotel", async (req, res) => {
       const booking = await bookinghotelCollection.find().toArray();
       res.send(booking);
-    });
+    })
 
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
@@ -140,13 +140,78 @@ async function run() {
       const result = await bookinghotelCollection.insertOne(newProperty);
       res.send(result);
     });
-    // host Add property
-    app.post("/AddProperty", async (req, res) => {
+    // ...existing code...
+
+// Delete booking by ID
+app.delete("/bookinghotel/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await bookinghotelCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    res.json({ message: "Booking deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Error deleting booking", error });
+  }
+});
+
+// ...existing code...
+
+
+     // host Add property
+       app.post("/AddProperty", async (req, res) => {
       const AddProperty = req.body;
       // console.log(newProperty);
       const result = await propertiesCollection.insertOne(AddProperty);
       res.send(result);
     });
+
+   
+
+// Update property by ID
+app.put("/AddProperty/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updateData = req.body;
+
+    const result = await propertiesCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "Property not found" });
+    }
+
+    res.json({ message: "Property updated successfully", result });
+  } catch (error) {
+    res.status(500).json({ message: "Error updating property", error });
+  }
+});
+
+
+    // ...existing code...
+
+// Delete property by ID
+app.delete("/properties/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await propertiesCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Property not found" });
+    }
+
+    res.json({ message: "Property deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Error deleting property", error });
+  }
+});
+
+// ...existing code...
 
     //  Update user role (host/guest)
     app.patch("/users/role/:id", async (req, res) => {
