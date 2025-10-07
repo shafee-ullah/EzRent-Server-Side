@@ -132,6 +132,7 @@ async function run() {
       const booking = await bookinghotelCollection.find().toArray();
       res.send(booking);
     })
+  
 
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
