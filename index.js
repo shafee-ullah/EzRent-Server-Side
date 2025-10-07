@@ -10,7 +10,10 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Database connection
+// stripe account
+const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
+
+// Database connected
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.spelf9f.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -33,6 +36,7 @@ async function run() {
       .collection("bookingdata");
     const usersCollection = client.db("ezrent").collection("users");
     const hostRequestCollection = client.db("ezrent").collection("hostRequest");
+    const paymentsCollection = client.db("ezrent").collection("payments");
 
     // Register new user
     app.post("/users", async (req, res) => {
@@ -52,12 +56,10 @@ async function run() {
 
         // Insert new user
         const result = await usersCollection.insertOne({ name, email, role });
-        res
-          .status(201)
-          .send({
-            message: "User registered successfully",
-            userId: result.insertedId,
-          });
+        res.status(201).send({
+          message: "User registered successfully",
+          userId: result.insertedId,
+        });
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Server error" });
@@ -115,9 +117,7 @@ async function run() {
     });
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection
-        .find().limit(8)
-        .toArray();
+      const cursor = await propertiesCollection.find().limit(8).toArray();
       res.send(cursor);
     });
 
@@ -128,7 +128,7 @@ async function run() {
       res.send(result);
     });
     //  guest booking data get api
-    app.get("/bookinghotel",async(req,res)=>{
+    app.get("/bookinghotel", async (req, res) => {
       const booking = await bookinghotelCollection.find().toArray();
       res.send(booking);
     })
@@ -251,6 +251,158 @@ app.delete("/properties/:id", async (req, res) => {
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Server error" });
+      }
+    });
+
+    // ==================== PAYMENT ENDPOINTS ====================
+
+    // Create Stripe Payment Intent
+    app.post("/api/payment/create-payment-intent", async (req, res) => {
+      try {
+        const { amount, bookingId, userId } = req.body;
+
+        // Validate required fields
+        if (!amount || !bookingId || !userId) {
+          return res.status(400).json({
+            error: "Missing required fields: amount, bookingId, userId",
+          });
+        }
+
+        // Validate amount (should be positive number in cents)
+        const amountInCents = Math.round(amount * 100);
+        if (amountInCents <= 0) {
+          return res.status(400).json({
+            error: "Amount must be greater than 0",
+          });
+        }
+
+        // Create payment intent with Stripe
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amountInCents,
+          currency: "usd",
+          metadata: {
+            bookingId: bookingId,
+            userId: userId,
+          },
+        });
+
+        res.json({
+          clientSecret: paymentIntent.client_secret,
+          paymentIntentId: paymentIntent.id,
+        });
+      } catch (error) {
+        console.error("Error creating payment intent:", error);
+        res.status(500).json({
+          error: "Failed to create payment intent",
+          message: error.message,
+        });
+      }
+    });
+
+    // Confirm payment and store in database
+    app.post("/api/payment/confirm", async (req, res) => {
+      try {
+        const {
+          transactionId,
+          amount,
+          bookingId,
+          userId,
+          status,
+          paymentMethod,
+          currency = "usd",
+        } = req.body;
+
+        // Validate required fields
+        if (!transactionId || !amount || !bookingId || !userId || !status) {
+          return res.status(400).json({
+            error:
+              "Missing required fields: transactionId, amount, bookingId, userId, status",
+          });
+        }
+
+        // Validate payment status
+        if (!["succeeded", "failed", "canceled"].includes(status)) {
+          return res.status(400).json({
+            error: "Invalid payment status",
+          });
+        }
+
+        // Create payment document
+        const paymentData = {
+          bookingId: bookingId,
+          userId: userId,
+          amount: parseFloat(amount),
+          transactionId: transactionId,
+          paymentStatus: status,
+          paymentMethod: paymentMethod || "card",
+          currency: currency,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Store payment in MongoDB
+        const result = await paymentsCollection.insertOne(paymentData);
+
+        if (result.acknowledged) {
+          res.json({
+            success: true,
+            message: "Payment confirmed and stored successfully",
+            paymentId: result.insertedId,
+          });
+        } else {
+          throw new Error("Failed to store payment data");
+        }
+      } catch (error) {
+        console.error("Error confirming payment:", error);
+        res.status(500).json({
+          error: "Failed to confirm payment",
+          message: error.message,
+        });
+      }
+    });
+
+    // Get payment history for a user
+    app.get("/api/payments/user/:userId", async (req, res) => {
+      try {
+        const userId = req.params.userId;
+
+        const payments = await paymentsCollection
+          .find({ userId: userId })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.json(payments);
+      } catch (error) {
+        console.error("Error fetching payments:", error);
+        res.status(500).json({
+          error: "Failed to fetch payments",
+          message: error.message,
+        });
+      }
+    });
+
+    // Get payment by transaction ID
+    app.get("/api/payments/transaction/:transactionId", async (req, res) => {
+      try {
+        const transactionId = req.params.transactionId;
+
+        const payment = await paymentsCollection.findOne({
+          transactionId: transactionId,
+        });
+
+        if (!payment) {
+          return res.status(404).json({
+            error: "Payment not found",
+          });
+        }
+
+        res.json(payment);
+      } catch (error) {
+        console.error("Error fetching payment:", error);
+        res.status(500).json({
+          error: "Failed to fetch payment",
+          message: error.message,
+        });
       }
     });
 
