@@ -110,14 +110,29 @@ async function run() {
       res.send(allReq);
     });
 
-    //  get api
-    app.get("/properties", async (req, res) => {
-      const cursor = await propertiesCollection.find().toArray();
-      res.send(cursor);
+     app.get("/properties", async (req, res) => {
+      const  request = await propertiesCollection.find().toArray();
+      res.send( request);
     });
+
+    //  get api - support optional email query to filter properties by owner/host email
+    // app.get("/properties", async (req, res) => {
+    //   try {
+    //     const { email } = req.query; // optional query param: /properties?email=someone@example.com
+    //     const query = email ? { email } : {};
+    //     const properties = await propertiesCollection.find(query).toArray();
+    //     res.send(properties);
+    //   } catch (error) {
+    //     console.error("Error fetching properties:", error);
+    //     res.status(500).json({ message: "Server error" });
+    //   }
+    //  });
+
+
+
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find().limit(8).toArray();
+      const cursor = await propertiesCollection.find().limit(6).toArray();
       res.send(cursor);
     });
 
