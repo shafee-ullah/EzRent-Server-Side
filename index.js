@@ -156,18 +156,40 @@ async function run() {
 //        res.json(updated);
 // });
 // server.js
+// app.patch("/bookings/:id", async (req, res) => {
+//   const  id  = req.params.id;
+//   const { status } = req.body;
+//   const updated = await bookinghotelCollection.updateOne(
+//     { _id: new ObjectId(id) },
+//     {$set:status },
+//     { new: true } // নতুন updated ডকুমেন্ট রিটার্ন করবে
+//   );
+
+//   res.send( updated );
+// });
+
 app.patch("/bookings/:id", async (req, res) => {
-  const  id  = req.params.id;
+  const { id } = req.params;
   const { status } = req.body;
-  const updated = await bookinghotelCollection.updateOne(
-    { _id: new ObjectId(id) },
-    {$set:status },
-    { new: true } // নতুন updated ডকুমেন্ট রিটার্ন করবে
-  );
 
-  res.send( updated );
+  try {
+    const result = await bookinghotelCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    // Fetch the updated booking to send back
+    const updatedBooking = await bookinghotelCollection.findOne({ _id: new ObjectId(id) });
+    res.json({ booking: updatedBooking });
+  } catch (err) {
+    console.error("Error updating booking:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 });
-
     // get bookings data with email based 
     app.get("/myBookings", async (req, res) => {
       try {
