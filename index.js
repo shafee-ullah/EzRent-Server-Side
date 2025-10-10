@@ -28,7 +28,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const propertiesCollection = client.db("ezrent").collection("properties");
     const bookinghotelCollection = client
@@ -183,11 +183,24 @@ async function run() {
       res.send(allReq);
     });
 
-    //  get api
-    app.get("/properties", async (req, res) => {
-      const cursor = await propertiesCollection.find().toArray();
-      res.send(cursor);
+     app.get("/properties", async (req, res) => {
+      const  request = await propertiesCollection.find().toArray();
+      res.send( request);
     });
+
+    //  get api - support optional email query to filter properties by owner/host email
+    // app.get("/properties", async (req, res) => {
+    //   try {
+    //     const { email } = req.query; // optional query param: /properties?email=someone@example.com
+    //     const query = email ? { email } : {};
+    //     const properties = await propertiesCollection.find(query).toArray();
+    //     res.send(properties);
+    //   } catch (error) {
+    //     console.error("Error fetching properties:", error);
+    //     res.status(500).json({ message: "Server error" });
+    //   }
+    //  });
+
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
       const cursor = await propertiesCollection.find().limit(8).toArray();
@@ -206,6 +219,27 @@ async function run() {
       res.send(booking);
     })
 
+//   app.put("/bookings/:id", async (req, res) => {
+//        const { id } = req.params.id;
+//        const filter= {_id:new ObjectId(id)}
+//        const status= req.body;
+//     const updated = await bookinghotelCollection.updateOne(filter,
+//      { $set: status } 
+//   );  
+//        res.json(updated);
+// });
+// server.js
+app.patch("/bookings/:id", async (req, res) => {
+  const  id  = req.params.id;
+  const { status } = req.body;
+  const updated = await bookinghotelCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {$set:status },
+    { new: true } // নতুন updated ডকুমেন্ট রিটার্ন করবে
+  );
+
+  res.send( updated );
+});
 
     // get bookings data with email based 
     app.get("/myBookings", async (req, res) => {
@@ -247,9 +281,7 @@ async function run() {
       }
     });
 
-    // ...existing code...
-
-
+   
     // host Add property
     app.post("/AddProperty", async (req, res) => {
       const AddProperty = req.body;
@@ -546,7 +578,7 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
