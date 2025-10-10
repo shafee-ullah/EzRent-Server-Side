@@ -128,11 +128,9 @@ async function run() {
     //   }
     //  });
 
-
-
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find().limit(6).toArray();
+      const cursor = await propertiesCollection.find().limit(8).toArray();
       res.send(cursor);
     });
 
@@ -148,6 +146,27 @@ async function run() {
       res.send(booking);
     })
 
+//   app.put("/bookings/:id", async (req, res) => {
+//        const { id } = req.params.id;
+//        const filter= {_id:new ObjectId(id)}
+//        const status= req.body;
+//     const updated = await bookinghotelCollection.updateOne(filter,
+//      { $set: status } 
+//   );  
+//        res.json(updated);
+// });
+// server.js
+app.patch("/bookings/:id", async (req, res) => {
+  const  id  = req.params.id;
+  const { status } = req.body;
+  const updated = await bookinghotelCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {$set:status },
+    { new: true } // নতুন updated ডকুমেন্ট রিটার্ন করবে
+  );
+
+  res.send( updated );
+});
 
     // get bookings data with email based 
     app.get("/myBookings", async (req, res) => {
@@ -189,9 +208,7 @@ async function run() {
       }
     });
 
-    // ...existing code...
-
-
+   
     // host Add property
     app.post("/AddProperty", async (req, res) => {
       const AddProperty = req.body;
