@@ -3,8 +3,18 @@ dotenv.config();
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { Server } = require("socket.io");
+const http = require("http");
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173", // Frontend URL
+    methods: ["GET", "POST"],
+  },
+});
+
 const port = process.env.PORT || 5000;
 
 app.use(cors());
@@ -39,6 +49,343 @@ async function run() {
     const paymentsCollection = client.db("ezrent").collection("payments");
     const wishListCollection = client.db("ezrent").collection("wishList");
 
+    // Chat collections
+    const conversationsCollection = client
+      .db("ezrent")
+      .collection("conversations");
+    const messagesCollection = client.db("ezrent").collection("messages");
+
+    // ==================== SOCKET.IO SETUP ====================
+
+    // Store online users
+    const onlineUsers = new Map();
+
+    io.on("connection", (socket) => {
+      console.log("User connected:", socket.id);
+
+      // User joins with their user ID
+      socket.on("join", (userId) => {
+        onlineUsers.set(userId, socket.id);
+        socket.userId = userId;
+        console.log(`User ${userId} joined with socket ${socket.id}`);
+
+        // Notify others that user is online
+        socket.broadcast.emit("user-online", userId);
+      });
+
+      // Join a conversation room
+      socket.on("join-conversation", (conversationId) => {
+        socket.join(conversationId);
+        console.log(
+          `User ${socket.userId} joined conversation ${conversationId}`
+        );
+      });
+
+      // Leave a conversation room
+      socket.on("leave-conversation", (conversationId) => {
+        socket.leave(conversationId);
+        console.log(
+          `User ${socket.userId} left conversation ${conversationId}`
+        );
+      });
+
+      // Handle new message
+      socket.on("send-message", async (data) => {
+        try {
+          const {
+            conversationId,
+            senderId,
+            message,
+            messageType = "text",
+          } = data;
+
+          // Save message to database
+          const newMessage = {
+            conversationId: new ObjectId(conversationId),
+            senderId: new ObjectId(senderId),
+            message,
+            messageType,
+            timestamp: new Date(),
+            read: false,
+          };
+
+          const result = await messagesCollection.insertOne(newMessage);
+          newMessage._id = result.insertedId;
+
+          // Update conversation last message
+          await conversationsCollection.updateOne(
+            { _id: new ObjectId(conversationId) },
+            {
+              $set: {
+                lastMessage: message,
+                lastMessageTime: new Date(),
+                lastMessageSender: new ObjectId(senderId),
+              },
+            }
+          );
+
+          // Emit message to all users in the conversation
+          io.to(conversationId).emit("new-message", {
+            ...newMessage,
+            conversationId: conversationId,
+            senderId: senderId,
+          });
+        } catch (error) {
+          console.error("Error sending message:", error);
+          socket.emit("message-error", { error: "Failed to send message" });
+        }
+      });
+
+      // Handle typing indicators
+      socket.on("typing-start", (data) => {
+        socket.to(data.conversationId).emit("user-typing", {
+          userId: socket.userId,
+          conversationId: data.conversationId,
+          isTyping: true,
+        });
+      });
+
+      socket.on("typing-stop", (data) => {
+        socket.to(data.conversationId).emit("user-typing", {
+          userId: socket.userId,
+          conversationId: data.conversationId,
+          isTyping: false,
+        });
+      });
+
+      // Handle message read status
+      socket.on("mark-messages-read", async (data) => {
+        try {
+          const { conversationId, userId } = data;
+
+          await messagesCollection.updateMany(
+            {
+              conversationId: new ObjectId(conversationId),
+              senderId: { $ne: new ObjectId(userId) },
+              read: false,
+            },
+            { $set: { read: true, readAt: new Date() } }
+          );
+
+          // Notify sender that messages were read
+          socket.to(conversationId).emit("messages-read", {
+            conversationId,
+            readBy: userId,
+          });
+        } catch (error) {
+          console.error("Error marking messages as read:", error);
+        }
+      });
+
+      // Handle disconnect
+      socket.on("disconnect", () => {
+        if (socket.userId) {
+          onlineUsers.delete(socket.userId);
+          console.log(`User ${socket.userId} disconnected`);
+
+          // Notify others that user is offline
+          socket.broadcast.emit("user-offline", socket.userId);
+        }
+      });
+    });
+
+    // ==================== CHAT API ROUTES ====================
+
+    // Create a new conversation
+    app.post("/api/conversations", async (req, res) => {
+      try {
+        const { guestId, hostId, propertyId, propertyTitle } = req.body;
+
+        if (!guestId || !hostId) {
+          return res
+            .status(400)
+            .json({ message: "Guest ID and Host ID are required" });
+        }
+
+        // Check if conversation already exists
+        const existingConversation = await conversationsCollection.findOne({
+          $or: [
+            { guestId: new ObjectId(guestId), hostId: new ObjectId(hostId) },
+            { guestId: new ObjectId(hostId), hostId: new ObjectId(guestId) },
+          ],
+        });
+
+        if (existingConversation) {
+          return res.json(existingConversation);
+        }
+
+        // Create new conversation
+        const newConversation = {
+          guestId: new ObjectId(guestId),
+          hostId: new ObjectId(hostId),
+          propertyId: propertyId ? new ObjectId(propertyId) : null,
+          propertyTitle: propertyTitle || null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          lastMessage: null,
+          lastMessageTime: null,
+          lastMessageSender: null,
+        };
+
+        const result = await conversationsCollection.insertOne(newConversation);
+        newConversation._id = result.insertedId;
+
+        res.status(201).json(newConversation);
+      } catch (error) {
+        console.error("Error creating conversation:", error);
+        res.status(500).json({
+          message: "Failed to create conversation",
+          error: error.message,
+        });
+      }
+    });
+
+    // Get all conversations for a user
+    app.get("/api/conversations/:userId", async (req, res) => {
+      try {
+        const userId = req.params.userId;
+
+        const conversations = await conversationsCollection
+          .aggregate([
+            {
+              $match: {
+                $or: [
+                  { guestId: new ObjectId(userId) },
+                  { hostId: new ObjectId(userId) },
+                ],
+              },
+            },
+            {
+              $lookup: {
+                from: "users",
+                localField: "guestId",
+                foreignField: "_id",
+                as: "guest",
+              },
+            },
+            {
+              $lookup: {
+                from: "users",
+                localField: "hostId",
+                foreignField: "_id",
+                as: "host",
+              },
+            },
+            {
+              $addFields: {
+                otherUser: {
+                  $cond: {
+                    if: { $eq: ["$guestId", new ObjectId(userId)] },
+                    then: { $arrayElemAt: ["$host", 0] },
+                    else: { $arrayElemAt: ["$guest", 0] },
+                  },
+                },
+              },
+            },
+            {
+              $project: {
+                guest: 0,
+                host: 0,
+              },
+            },
+            {
+              $sort: { updatedAt: -1 },
+            },
+          ])
+          .toArray();
+
+        res.json(conversations);
+      } catch (error) {
+        console.error("Error fetching conversations:", error);
+        res.status(500).json({
+          message: "Failed to fetch conversations",
+          error: error.message,
+        });
+      }
+    });
+
+    // Get messages for a conversation
+    app.get("/api/conversations/:conversationId/messages", async (req, res) => {
+      try {
+        const conversationId = req.params.conversationId;
+        const { page = 1, limit = 50 } = req.query;
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const messages = await messagesCollection
+          .find({ conversationId: new ObjectId(conversationId) })
+          .sort({ timestamp: -1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .toArray();
+
+        // Reverse to get chronological order
+        messages.reverse();
+
+        res.json(messages);
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+        res
+          .status(500)
+          .json({ message: "Failed to fetch messages", error: error.message });
+      }
+    });
+
+    // Send a message (also handled by Socket.io, but keeping REST endpoint for backup)
+    app.post("/api/messages", async (req, res) => {
+      try {
+        const {
+          conversationId,
+          senderId,
+          message,
+          messageType = "text",
+        } = req.body;
+
+        if (!conversationId || !senderId || !message) {
+          return res.status(400).json({
+            message: "Conversation ID, sender ID, and message are required",
+          });
+        }
+
+        const newMessage = {
+          conversationId: new ObjectId(conversationId),
+          senderId: new ObjectId(senderId),
+          message,
+          messageType,
+          timestamp: new Date(),
+          read: false,
+        };
+
+        const result = await messagesCollection.insertOne(newMessage);
+        newMessage._id = result.insertedId;
+
+        // Update conversation last message
+        await conversationsCollection.updateOne(
+          { _id: new ObjectId(conversationId) },
+          {
+            $set: {
+              lastMessage: message,
+              lastMessageTime: new Date(),
+              lastMessageSender: new ObjectId(senderId),
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        res.status(201).json(newMessage);
+      } catch (error) {
+        console.error("Error sending message:", error);
+        res
+          .status(500)
+          .json({ message: "Failed to send message", error: error.message });
+      }
+    });
+
+    // Get online users
+    app.get("/api/users/online", (req, res) => {
+      const onlineUserIds = Array.from(onlineUsers.keys());
+      res.json(onlineUserIds);
+    });
 
     // Add property to wishlist
     app.post("/api/wishlist", async (req, res) => {
@@ -46,13 +393,17 @@ async function run() {
         const { email, propertyId, name, image, price, host } = req.body;
 
         if (!email || !propertyId) {
-          return res.status(400).json({ message: "Email and propertyId are required" });
+          return res
+            .status(400)
+            .json({ message: "Email and propertyId are required" });
         }
 
         // Check if the property is already in the user's wishlist
         const exists = await wishListCollection.findOne({ email, propertyId });
         if (exists) {
-          return res.status(400).json({ message: "Property already in wishlist" });
+          return res
+            .status(400)
+            .json({ message: "Property already in wishlist" });
         }
 
         const wishlistItem = {
@@ -69,7 +420,9 @@ async function run() {
         res.status(201).json(wishlistItem);
       } catch (error) {
         console.error("Error adding to wishlist:", error);
-        res.status(500).json({ message: "Failed to add to wishlist", error: error.message });
+        res
+          .status(500)
+          .json({ message: "Failed to add to wishlist", error: error.message });
       }
     });
 
@@ -78,13 +431,16 @@ async function run() {
       try {
         const { email } = req.query;
 
-        if (!email) return res.status(400).json({ message: "Email is required" });
+        if (!email)
+          return res.status(400).json({ message: "Email is required" });
 
         const wishlist = await wishListCollection.find({ email }).toArray();
         res.json(wishlist);
       } catch (error) {
         console.error("Error fetching wishlist:", error);
-        res.status(500).json({ message: "Failed to fetch wishlist", error: error.message });
+        res
+          .status(500)
+          .json({ message: "Failed to fetch wishlist", error: error.message });
       }
     });
 
@@ -94,9 +450,13 @@ async function run() {
         const { propertyId } = req.params;
         const { email } = req.query;
 
-        if (!email) return res.status(400).json({ message: "Email is required" });
+        if (!email)
+          return res.status(400).json({ message: "Email is required" });
 
-        const result = await wishListCollection.deleteOne({ email, propertyId });
+        const result = await wishListCollection.deleteOne({
+          email,
+          propertyId,
+        });
 
         if (result.deletedCount === 0) {
           return res.status(404).json({ message: "Wishlist item not found" });
@@ -105,10 +465,12 @@ async function run() {
         res.json({ message: "Wishlist item removed successfully" });
       } catch (error) {
         console.error("Error deleting wishlist item:", error);
-        res.status(500).json({ message: "Failed to delete wishlist item", error: error.message });
+        res.status(500).json({
+          message: "Failed to delete wishlist item",
+          error: error.message,
+        });
       }
     });
-
 
     // Register new user
     app.post("/users", async (req, res) => {
@@ -143,7 +505,6 @@ async function run() {
       const user = await usersCollection.find().toArray();
       res.send(user);
     });
-
 
     // ✅ Recommended approach
     app.get("/api/users", async (req, res) => {
@@ -183,9 +544,9 @@ async function run() {
       res.send(allReq);
     });
 
-     app.get("/properties", async (req, res) => {
-      const  request = await propertiesCollection.find().toArray();
-      res.send( request);
+    app.get("/properties", async (req, res) => {
+      const request = await propertiesCollection.find().toArray();
+      res.send(request);
     });
 
     //  get api - support optional email query to filter properties by owner/host email
@@ -217,36 +578,107 @@ async function run() {
     app.get("/bookinghotel", async (req, res) => {
       const booking = await bookinghotelCollection.find().toArray();
       res.send(booking);
-    })
+    });
 
-//   app.put("/bookings/:id", async (req, res) => {
-//        const { id } = req.params.id;
-//        const filter= {_id:new ObjectId(id)}
-//        const status= req.body;
-//     const updated = await bookinghotelCollection.updateOne(filter,
-//      { $set: status } 
-//   );  
-//        res.json(updated);
-// });
-// server.js
-app.patch("/bookings/:id", async (req, res) => {
-  const  id  = req.params.id;
-  const { status } = req.body;
-  const updated = await bookinghotelCollection.updateOne(
-    { _id: new ObjectId(id) },
-    {$set:status },
-    { new: true } // নতুন updated ডকুমেন্ট রিটার্ন করবে
-  );
+    //   app.put("/bookings/:id", async (req, res) => {
+    //        const { id } = req.params.id;
+    //        const filter= {_id:new ObjectId(id)}
+    //        const status= req.body;
+    //     const updated = await bookinghotelCollection.updateOne(filter,
+    //      { $set: status }
+    //   );
+    //        res.json(updated);
+    // });
+    // server.js
+    app.patch("/bookings/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+      const updated = await bookinghotelCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: status },
+        { new: true } // নতুন updated ডকুমেন্ট রিটার্ন করবে
+      );
 
-  res.send( updated );
-});
+      res.send(updated);
+    });
 
-    // get bookings data with email based 
+    // get bookings data with email based
     app.get("/myBookings", async (req, res) => {
       try {
         const { email } = req.query;
         const query = email ? { email } : {}; // filter if email provided
-        const bookings = await bookinghotelCollection.find(query).toArray();
+
+        // Use aggregation to join with properties and users collections to get host information
+        const bookings = await bookinghotelCollection
+          .aggregate([
+            { $match: query },
+            {
+              // Add a field to convert propertyId string to ObjectId if needed
+              $addFields: {
+                propertyObjectId: {
+                  $cond: {
+                    if: { $eq: [{ $type: "$propertyId" }, "objectId"] },
+                    then: "$propertyId",
+                    else: {
+                      $cond: {
+                        if: { $eq: [{ $type: "$propertyId" }, "string"] },
+                        then: { $toObjectId: "$propertyId" },
+                        else: null,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              $lookup: {
+                from: "properties",
+                localField: "propertyObjectId",
+                foreignField: "_id",
+                as: "propertyDetails",
+              },
+            },
+            {
+              $unwind: {
+                path: "$propertyDetails",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $lookup: {
+                from: "users",
+                localField: "propertyDetails.email",
+                foreignField: "email",
+                as: "hostUser",
+              },
+            },
+            {
+              $unwind: {
+                path: "$hostUser",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $addFields: {
+                hostId: "$hostUser._id",
+                hostName: "$propertyDetails.host",
+                propertyTitle: "$propertyDetails.title",
+                // Ensure propertyId is set
+                propertyId: {
+                  $ifNull: ["$propertyObjectId", "$propertyId"],
+                },
+              },
+            },
+            {
+              $project: {
+                propertyDetails: 0,
+                hostUser: 0,
+                propertyObjectId: 0, // Remove temporary field
+              },
+            },
+          ])
+          .toArray();
+
         res.send(bookings);
       } catch (error) {
         console.error("Error fetching bookings:", error);
@@ -254,14 +686,34 @@ app.patch("/bookings/:id", async (req, res) => {
       }
     });
 
-
-
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
-      const newProperty = req.body;
-      // console.log(newProperty);
-      const result = await bookinghotelCollection.insertOne(newProperty);
-      res.send(result);
+      try {
+        const bookingData = req.body;
+        
+        // Ensure propertyId is stored as ObjectId if it exists and is a string
+        if (bookingData.propertyId) {
+          if (typeof bookingData.propertyId === "string") {
+            bookingData.propertyId = new ObjectId(bookingData.propertyId);
+          }
+        } else if (bookingData.id && typeof bookingData.id === "string") {
+          // Fallback: if propertyId doesn't exist but 'id' does, use it
+          bookingData.propertyId = new ObjectId(bookingData.id);
+        }
+
+        // Add timestamp
+        bookingData.createdAt = new Date();
+        bookingData.updatedAt = new Date();
+
+        const result = await bookinghotelCollection.insertOne(bookingData);
+        res.send(result);
+      } catch (error) {
+        console.error("Error creating booking:", error);
+        res.status(500).json({ 
+          message: "Failed to create booking", 
+          error: error.message 
+        });
+      }
     });
     // ...existing code...
 
@@ -269,7 +721,9 @@ app.patch("/bookings/:id", async (req, res) => {
     app.delete("/bookinghotel/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        const result = await bookinghotelCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await bookinghotelCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
         if (result.deletedCount === 0) {
           return res.status(404).json({ message: "Booking not found" });
@@ -281,7 +735,63 @@ app.patch("/bookings/:id", async (req, res) => {
       }
     });
 
-   
+    // Utility endpoint to migrate existing bookings (add propertyId as ObjectId)
+    app.post("/api/migrate-bookings", async (req, res) => {
+      try {
+        // Find all bookings that need migration
+        const bookings = await bookinghotelCollection.find({}).toArray();
+        
+        let migratedCount = 0;
+        let errorCount = 0;
+
+        for (const booking of bookings) {
+          try {
+            const updates = {};
+            
+            // If propertyId doesn't exist or is a string, convert it
+            if (booking.id && !booking.propertyId) {
+              updates.propertyId = new ObjectId(booking.id);
+            } else if (booking.propertyId && typeof booking.propertyId === "string") {
+              updates.propertyId = new ObjectId(booking.propertyId);
+            }
+
+            // Add timestamps if missing
+            if (!booking.createdAt) {
+              updates.createdAt = booking.createdAt || new Date();
+            }
+            if (!booking.updatedAt) {
+              updates.updatedAt = new Date();
+            }
+
+            // Update if there are changes
+            if (Object.keys(updates).length > 0) {
+              await bookinghotelCollection.updateOne(
+                { _id: booking._id },
+                { $set: updates }
+              );
+              migratedCount++;
+            }
+          } catch (err) {
+            console.error(`Error migrating booking ${booking._id}:`, err);
+            errorCount++;
+          }
+        }
+
+        res.json({
+          message: "Migration completed",
+          totalBookings: bookings.length,
+          migratedCount,
+          errorCount,
+        });
+      } catch (error) {
+        console.error("Migration error:", error);
+        res.status(500).json({
+          message: "Migration failed",
+          error: error.message,
+        });
+      }
+    });
+
     // host Add property
     app.post("/AddProperty", async (req, res) => {
       const AddProperty = req.body;
@@ -289,8 +799,6 @@ app.patch("/bookings/:id", async (req, res) => {
       const result = await propertiesCollection.insertOne(AddProperty);
       res.send(result);
     });
-
-
 
     // Update property by ID
     app.put("/AddProperty/:id", async (req, res) => {
@@ -313,14 +821,15 @@ app.patch("/bookings/:id", async (req, res) => {
       }
     });
 
-
     // ...existing code...
 
     // Delete property by ID
     app.delete("/properties/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        const result = await propertiesCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await propertiesCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
         if (result.deletedCount === 0) {
           return res.status(404).json({ message: "Property not found" });
@@ -333,7 +842,6 @@ app.patch("/bookings/:id", async (req, res) => {
     });
 
     // ...existing code...
-
 
     // ✅ PATCH: Update user role (Admin endpoint)
     app.patch("/users/role/:id", async (req, res) => {
@@ -361,14 +869,15 @@ app.patch("/bookings/:id", async (req, res) => {
         if (result.modifiedCount > 0) {
           res.json({ message: `User role updated to ${role}` });
         } else {
-          res.status(404).json({ message: "User not found or role not changed" });
+          res
+            .status(404)
+            .json({ message: "User not found or role not changed" });
         }
       } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Error updating role", error });
       }
     });
-
 
     // ✅ PATCH: Update user status (Active / Suspended / Rejected)
     app.patch("/users/status/:id", async (req, res) => {
@@ -388,14 +897,15 @@ app.patch("/bookings/:id", async (req, res) => {
         if (result.modifiedCount > 0) {
           res.json({ message: `User status updated to ${status}` });
         } else {
-          res.status(404).json({ message: "User not found or status not changed" });
+          res
+            .status(404)
+            .json({ message: "User not found or status not changed" });
         }
       } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Error updating status", error });
       }
     });
-
 
     // 🗑️ Delete user (Reject)
     app.delete("/users/:id", async (req, res) => {
@@ -420,10 +930,6 @@ app.patch("/bookings/:id", async (req, res) => {
         res.status(500).json({ message: "Error deleting user" });
       }
     });
-
-
-
-
 
     // ==================== PAYMENT ENDPOINTS ====================
 
@@ -593,6 +1099,7 @@ app.get("/", (req, res) => {
   res.send("Server is  running");
 });
 
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
+  console.log(`Socket.io server is ready for connections`);
 });
