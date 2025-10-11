@@ -37,6 +37,78 @@ async function run() {
     const usersCollection = client.db("ezrent").collection("users");
     const hostRequestCollection = client.db("ezrent").collection("hostRequest");
     const paymentsCollection = client.db("ezrent").collection("payments");
+    const wishListCollection = client.db("ezrent").collection("wishList");
+
+
+    // Add property to wishlist
+    app.post("/api/wishlist", async (req, res) => {
+      try {
+        const { email, propertyId, name, image, price, host } = req.body;
+
+        if (!email || !propertyId) {
+          return res.status(400).json({ message: "Email and propertyId are required" });
+        }
+
+        // Check if the property is already in the user's wishlist
+        const exists = await wishListCollection.findOne({ email, propertyId });
+        if (exists) {
+          return res.status(400).json({ message: "Property already in wishlist" });
+        }
+
+        const wishlistItem = {
+          email,
+          propertyId,
+          name,
+          image,
+          price,
+          host,
+          createdAt: new Date(),
+        };
+
+        const result = await wishListCollection.insertOne(wishlistItem);
+        res.status(201).json(wishlistItem);
+      } catch (error) {
+        console.error("Error adding to wishlist:", error);
+        res.status(500).json({ message: "Failed to add to wishlist", error: error.message });
+      }
+    });
+
+    // Get wishlist by user email
+    app.get("/api/wishlist", async (req, res) => {
+      try {
+        const { email } = req.query;
+
+        if (!email) return res.status(400).json({ message: "Email is required" });
+
+        const wishlist = await wishListCollection.find({ email }).toArray();
+        res.json(wishlist);
+      } catch (error) {
+        console.error("Error fetching wishlist:", error);
+        res.status(500).json({ message: "Failed to fetch wishlist", error: error.message });
+      }
+    });
+
+    // Delete wishlist item by propertyId and email
+    app.delete("/api/wishlist/:propertyId", async (req, res) => {
+      try {
+        const { propertyId } = req.params;
+        const { email } = req.query;
+
+        if (!email) return res.status(400).json({ message: "Email is required" });
+
+        const result = await wishListCollection.deleteOne({ email, propertyId });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: "Wishlist item not found" });
+        }
+
+        res.json({ message: "Wishlist item removed successfully" });
+      } catch (error) {
+        console.error("Error deleting wishlist item:", error);
+        res.status(500).json({ message: "Failed to delete wishlist item", error: error.message });
+      }
+    });
+
 
     // Register new user
     app.post("/users", async (req, res) => {
@@ -71,6 +143,7 @@ async function run() {
       const user = await usersCollection.find().toArray();
       res.send(user);
     });
+
 
     // ✅ Recommended approach
     app.get("/api/users", async (req, res) => {
@@ -110,23 +183,22 @@ async function run() {
       res.send(allReq);
     });
 
-     app.get("/properties", async (req, res) => {
-      const  request = await propertiesCollection.find().toArray();
-      res.send( request);
+  app.get("/properties", async (req, res) => {
+      try {
+        const { email } = req.query;
+        const query = email ? { email } : {}; // filter if email provided
+        const bookings = await propertiesCollection.find(query).toArray();
+        res.send(bookings);
+      } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res.status(500).json({ message: "Server error" });
+      }
     });
 
-    //  get api - support optional email query to filter properties by owner/host email
-    // app.get("/properties", async (req, res) => {
-    //   try {
-    //     const { email } = req.query; // optional query param: /properties?email=someone@example.com
-    //     const query = email ? { email } : {};
-    //     const properties = await propertiesCollection.find(query).toArray();
-    //     res.send(properties);
-    //   } catch (error) {
-    //     console.error("Error fetching properties:", error);
-    //     res.status(500).json({ message: "Server error" });
-    //   }
-    //  });
+     app.get("/manageproperty", async (req, res) => {
+      const cursor = await propertiesCollection.find().toArray();
+      res.send(cursor);
+    });
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
@@ -146,27 +218,6 @@ async function run() {
       res.send(booking);
     })
 
-//   app.put("/bookings/:id", async (req, res) => {
-//        const { id } = req.params.id;
-//        const filter= {_id:new ObjectId(id)}
-//        const status= req.body;
-//     const updated = await bookinghotelCollection.updateOne(filter,
-//      { $set: status } 
-//   );  
-//        res.json(updated);
-// });
-// server.js
-// app.patch("/bookings/:id", async (req, res) => {
-//   const  id  = req.params.id;
-//   const { status } = req.body;
-//   const updated = await bookinghotelCollection.updateOne(
-//     { _id: new ObjectId(id) },
-//     {$set:status },
-//     { new: true } // নতুন updated ডকুমেন্ট রিটার্ন করবে
-//   );
-
-//   res.send( updated );
-// });
 
 app.patch("/bookings/:id", async (req, res) => {
   const { id } = req.params;
@@ -239,6 +290,53 @@ app.patch("/bookings/:id", async (req, res) => {
       res.send(result);
     });
 
+app.patch("/AddProperty/:id", async (req, res) => {
+  const { id } = req.params;
+  const { propertystatus} = req.body;
+
+  try {
+    const result = await propertiesCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: {propertystatus } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    // Fetch the updated booking to send back
+    const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
+    res.json({ booking: updatedBooking });
+  } catch (err) {
+    console.error("Error updating booking:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+  
+  // host dashbord update api
+  app.patch("/Property/:id", async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  try {
+    const result = await propertiesCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    // Fetch the updated booking to send back
+    const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
+    res.json({ booking: updatedBooking });
+  } catch (err) {
+    console.error("Error updating booking:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
 
 
     // Update property by ID
@@ -283,46 +381,96 @@ app.patch("/bookings/:id", async (req, res) => {
 
     // ...existing code...
 
-    //  Update user role (host/guest)
+
+    // ✅ PATCH: Update user role (Admin endpoint)
     app.patch("/users/role/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const { role } = req.body;
 
-        if (!role) return res.status(400).send({ message: "Role is required" });
+        if (!role) {
+          return res.status(400).json({ message: "Role is required" });
+        }
 
-        const result = await hostRequestCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { role } }
+        const query = { _id: new ObjectId(id) };
+        const update = { $set: { role } };
+
+        // Update in users collection
+        const result = await usersCollection.updateOne(query, update);
+
+        // Also update in hostRequestCollection if exists
+        await hostRequestCollection.updateOne(
+          { userId: id },
+          { $set: { status: "approved", newRole: role } },
+          { upsert: false }
         );
 
-        res.send(result);
+        if (result.modifiedCount > 0) {
+          res.json({ message: `User role updated to ${role}` });
+        } else {
+          res.status(404).json({ message: "User not found or role not changed" });
+        }
       } catch (error) {
         console.error(error);
-        res.status(500).send({ message: "Server error" });
+        res.status(500).json({ message: "Error updating role", error });
       }
     });
 
-    //  Update user status (reject, active, etc.)
+
+    // ✅ PATCH: Update user status (Active / Suspended / Rejected)
     app.patch("/users/status/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const { status } = req.body;
 
-        if (!status)
-          return res.status(400).send({ message: "Status is required" });
+        if (!status) {
+          return res.status(400).json({ message: "Status is required" });
+        }
 
-        const result = await hostRequestCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { status } }
-        );
+        const query = { _id: new ObjectId(id) };
+        const update = { $set: { status } };
 
-        res.send(result);
+        const result = await usersCollection.updateOne(query, update);
+
+        if (result.modifiedCount > 0) {
+          res.json({ message: `User status updated to ${status}` });
+        } else {
+          res.status(404).json({ message: "User not found or status not changed" });
+        }
       } catch (error) {
         console.error(error);
-        res.status(500).send({ message: "Server error" });
+        res.status(500).json({ message: "Error updating status", error });
       }
     });
+
+
+    // 🗑️ Delete user (Reject)
+    app.delete("/users/:id", async (req, res) => {
+      const { id } = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Delete user from users collection
+        const userDeleteResult = await usersCollection.deleteOne(query);
+
+        // Optional: also delete related host request if exists
+        await hostRequestCollection.deleteMany({ userId: id });
+
+        if (userDeleteResult.deletedCount === 0) {
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        res.json({ message: "User rejected and deleted successfully" });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error deleting user" });
+      }
+    });
+
+
+
+
 
     // ==================== PAYMENT ENDPOINTS ====================
 
