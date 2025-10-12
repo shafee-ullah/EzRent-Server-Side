@@ -530,7 +530,7 @@ async function run() {
         res.status(500).send({ message: "Server error" });
       }
     });
-    // hello
+    
 
     // host req post
     app.post("/hostRequest", async (req, res) => {
@@ -556,7 +556,7 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
-
+  // ho
      app.get("/manageproperty", async (req, res) => {
       const cursor = await propertiesCollection.find().toArray();
       res.send(cursor);
