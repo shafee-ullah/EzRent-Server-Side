@@ -7,6 +7,7 @@ const { Server } = require("socket.io");
 const http = require("http");
 
 const app = express();
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -19,6 +20,7 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+
 
 // stripe account
 const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
@@ -48,6 +50,7 @@ async function run() {
     const hostRequestCollection = client.db("ezrent").collection("hostRequest");
     const paymentsCollection = client.db("ezrent").collection("payments");
     const wishListCollection = client.db("ezrent").collection("wishList");
+   
 
     // Chat collections
     const conversationsCollection = client
@@ -545,7 +548,7 @@ async function run() {
       res.send(allReq);
     });
 
-  app.get("/properties", async (req, res) => {
+    app.get("/properties", async (req, res) => {
       try {
         const { email } = req.query;
         const query = email ? { email } : {}; // filter if email provided
@@ -557,7 +560,7 @@ async function run() {
       }
     });
 
-     app.get("/manageproperty", async (req, res) => {
+    app.get("/manageproperty", async (req, res) => {
       const cursor = await propertiesCollection.find().toArray();
       res.send(cursor);
     });
@@ -580,30 +583,31 @@ async function run() {
       res.send(booking);
     });
 
+    app.patch("/bookings/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
 
-app.patch("/bookings/:id", async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
+      try {
+        const result = await bookinghotelCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } }
+        );
 
-  try {
-    const result = await bookinghotelCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status } }
-    );
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Booking not found" });
+        }
 
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
-
-    // Fetch the updated booking to send back
-    const updatedBooking = await bookinghotelCollection.findOne({ _id: new ObjectId(id) });
-    res.json({ booking: updatedBooking });
-  } catch (err) {
-    console.error("Error updating booking:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
-});
-    // get bookings data with email based 
+        // Fetch the updated booking to send back
+        const updatedBooking = await bookinghotelCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        res.json({ booking: updatedBooking });
+      } catch (err) {
+        console.error("Error updating booking:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+      }
+    });
+    // get bookings data with email based
     app.get("/myBookings", async (req, res) => {
       try {
         const { email } = req.query;
@@ -691,7 +695,7 @@ app.patch("/bookings/:id", async (req, res) => {
     app.post("/bookinghotel", async (req, res) => {
       try {
         const bookingData = req.body;
-        
+
         // Ensure propertyId is stored as ObjectId if it exists and is a string
         if (bookingData.propertyId) {
           if (typeof bookingData.propertyId === "string") {
@@ -710,9 +714,9 @@ app.patch("/bookings/:id", async (req, res) => {
         res.send(result);
       } catch (error) {
         console.error("Error creating booking:", error);
-        res.status(500).json({ 
-          message: "Failed to create booking", 
-          error: error.message 
+        res.status(500).json({
+          message: "Failed to create booking",
+          error: error.message,
         });
       }
     });
@@ -741,18 +745,21 @@ app.patch("/bookings/:id", async (req, res) => {
       try {
         // Find all bookings that need migration
         const bookings = await bookinghotelCollection.find({}).toArray();
-        
+
         let migratedCount = 0;
         let errorCount = 0;
 
         for (const booking of bookings) {
           try {
             const updates = {};
-            
+
             // If propertyId doesn't exist or is a string, convert it
             if (booking.id && !booking.propertyId) {
               updates.propertyId = new ObjectId(booking.id);
-            } else if (booking.propertyId && typeof booking.propertyId === "string") {
+            } else if (
+              booking.propertyId &&
+              typeof booking.propertyId === "string"
+            ) {
               updates.propertyId = new ObjectId(booking.propertyId);
             }
 
@@ -801,54 +808,56 @@ app.patch("/bookings/:id", async (req, res) => {
       res.send(result);
     });
 
-app.patch("/AddProperty/:id", async (req, res) => {
-  const { id } = req.params;
-  const { propertystatus} = req.body;
+    app.patch("/AddProperty/:id", async (req, res) => {
+      const { id } = req.params;
+      const { propertystatus } = req.body;
 
-  try {
-    const result = await propertiesCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: {propertystatus } }
-    );
+      try {
+        const result = await propertiesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { propertystatus } }
+        );
 
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Booking not found" });
+        }
 
-    // Fetch the updated booking to send back
-    const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
-    res.json({ booking: updatedBooking });
-  } catch (err) {
-    console.error("Error updating booking:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
-});
+        // Fetch the updated booking to send back
+        const updatedBooking = await propertiesCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        res.json({ booking: updatedBooking });
+      } catch (err) {
+        console.error("Error updating booking:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+      }
+    });
 
-  
-  // host dashbord update api
-  app.patch("/Property/:id", async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
+    // host dashbord update api
+    app.patch("/Property/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
 
-  try {
-    const result = await propertiesCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status } }
-    );
+      try {
+        const result = await propertiesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } }
+        );
 
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Booking not found" });
+        }
 
-    // Fetch the updated booking to send back
-    const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
-    res.json({ booking: updatedBooking });
-  } catch (err) {
-    console.error("Error updating booking:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
-});
-
+        // Fetch the updated booking to send back
+        const updatedBooking = await propertiesCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        res.json({ booking: updatedBooking });
+      } catch (err) {
+        console.error("Error updating booking:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+      }
+    });
 
     // Update property by ID
     app.put("/AddProperty/:id", async (req, res) => {
