@@ -38,7 +38,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
+    await client.connect();
 
     const propertiesCollection = client.db("ezrent").collection("properties");
     const bookinghotelCollection = client
@@ -575,9 +575,48 @@ async function run() {
       res.send(result);
     });
     //  guest booking data get api
-    app.get("/bookinghotel", async (req, res) => {
-      const booking = await bookinghotelCollection.find().toArray();
-      res.send(booking);
+//  app.get("/bookinghotel", async (req, res) => {
+//   const { hostEmail } = req.query;
+
+//   if (!hostEmail) {
+//     return res.status(400).json({ message: "hostEmail query parameter is required" });
+//   }
+
+//   try {
+//     // ✅ সব property array হিসেবে আনো
+//     const properties = await propertiesCollection.find({ hostEmail }).toArray();
+
+//     const propertyIds = properties.map((p) => new ObjectId(p._id));
+
+//     if (propertyIds.length === 0) {
+//       return res.json([]); // host এর কোনো property নেই
+//     }
+
+//     // ✅ Booking গুলোও array হিসেবে আনো
+//     const bookings = await bookinghotelCollection
+//       .find({ propertyId: { $in: propertyIds } })
+//       .sort({ createdAt: -1 })
+//       .toArray();
+
+//     // ✅ নিশ্চিত করো তুমি শুধুমাত্র plain data পাঠাচ্ছো
+//     res.json(bookings);
+//   } catch (err) {
+//     console.error("Error fetching bookings:", err);
+//     res.status(500).json({ message: "Server error", error: err.message });
+//   }
+// });
+     
+
+     app.get("/bookinghotel", async (req, res) => {
+      try {
+        const { email} = req.query;
+        const query = email ? { email } : {}; // filter if email provided
+        const bookings = await bookinghotelCollection.find(query).toArray();
+        res.send(bookings);
+      } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res.status(500).json({ message: "Server error" });
+      }
     });
 
 
@@ -1134,7 +1173,7 @@ app.patch("/AddProperty/:id", async (req, res) => {
     });
 
     // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
+    await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
