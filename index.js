@@ -747,7 +747,7 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
-
+//  hoer
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
       try {
