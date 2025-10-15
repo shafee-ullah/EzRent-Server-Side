@@ -17,7 +17,7 @@ const io = new Server(server, {
   },
 });
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5001;
 
 app.use(cors());
 app.use(express.json());
@@ -105,10 +105,26 @@ async function run() {
             messageType = "text",
           } = data;
 
+          // Get conversation to find both users
+          const conversation = await conversationsCollection.findOne({
+            _id: new ObjectId(conversationId)
+          });
+          
+          if (!conversation) {
+            socket.emit("message-error", { error: "Conversation not found" });
+            return;
+          }
+
+          // Determine receiver ID
+          const receiverId = senderId === conversation.guestId.toString() 
+            ? conversation.hostId.toString() 
+            : conversation.guestId.toString();
+
           // Save message to database
           const newMessage = {
             conversationId: new ObjectId(conversationId),
             senderId: new ObjectId(senderId),
+            receiverId: receiverId,
             message,
             messageType,
             timestamp: new Date(),
@@ -130,12 +146,24 @@ async function run() {
             }
           );
 
-          // Emit message to all users in the conversation
+          // Emit message to all users in the conversation room
           io.to(conversationId).emit("new-message", {
             ...newMessage,
             conversationId: conversationId,
             senderId: senderId,
+            receiverId: receiverId
           });
+          
+          // Also send directly to receiver's socket if they're online
+          const receiverSocketId = onlineUsers.get(receiverId);
+          if (receiverSocketId) {
+            io.to(receiverSocketId).emit("new-message", {
+              ...newMessage,
+              conversationId: conversationId,
+              senderId: senderId,
+              receiverId: receiverId
+            });
+          }
         } catch (error) {
           console.error("Error sending message:", error);
           socket.emit("message-error", { error: "Failed to send message" });
@@ -208,11 +236,48 @@ async function run() {
             .json({ message: "Guest ID and Host ID are required" });
         }
 
+        // Find users by email if guestId or hostId are emails
+        let guestObjectId = guestId;
+        let hostObjectId = hostId;
+
+        // Check if guestId is an email
+        if (guestId && typeof guestId === 'string' && guestId.includes('@')) {
+          const guestUser = await usersCollection.findOne({ email: guestId });
+          if (guestUser) {
+            guestObjectId = guestUser._id;
+          } else {
+            return res.status(404).json({ message: "Guest user not found" });
+          }
+        } else if (guestId && typeof guestId === 'string') {
+          try {
+            guestObjectId = new ObjectId(guestId);
+          } catch (error) {
+            return res.status(400).json({ message: "Invalid guest ID format" });
+          }
+        }
+
+        // Check if hostId is an email
+        if (hostId && typeof hostId === 'string' && hostId.includes('@')) {
+          const hostUser = await usersCollection.findOne({ email: hostId });
+          if (hostUser) {
+            hostObjectId = hostUser._id;
+            console.log(hostObjectId);
+          } else {
+            return res.status(404).json({ message: "Host user not found" });
+          }
+        } else if (hostId && typeof hostId === 'string') {
+          try {
+            hostObjectId = new ObjectId(hostId);
+          } catch (error) {
+            return res.status(400).json({ message: "Invalid host ID format" });
+          }
+        }
+
         // Check if conversation already exists
         const existingConversation = await conversationsCollection.findOne({
           $or: [
-            { guestId: new ObjectId(guestId), hostId: new ObjectId(hostId) },
-            { guestId: new ObjectId(hostId), hostId: new ObjectId(guestId) },
+            { guestId: guestObjectId, hostId: hostObjectId },
+            { guestId: hostObjectId, hostId: guestObjectId },
           ],
         });
 
@@ -222,9 +287,9 @@ async function run() {
 
         // Create new conversation
         const newConversation = {
-          guestId: new ObjectId(guestId),
-          hostId: new ObjectId(hostId),
-          propertyId: propertyId ? new ObjectId(propertyId) : null,
+          guestId: guestObjectId,
+          hostId: hostObjectId,
+          propertyId: propertyId ? (propertyId !== hostId ? new ObjectId(propertyId) : null) : null,
           propertyTitle: propertyTitle || null,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -232,9 +297,24 @@ async function run() {
           lastMessageTime: null,
           lastMessageSender: null,
         };
+        
+        // Log the conversation data for debugging
+        console.log("Creating new conversation:", {
+          guestId: guestObjectId.toString(),
+          hostId: hostObjectId.toString(),
+          propertyId: newConversation.propertyId ? newConversation.propertyId.toString() : null,
+          propertyTitle: propertyTitle
+        });
 
         const result = await conversationsCollection.insertOne(newConversation);
         newConversation._id = result.insertedId;
+        
+        // Notify host about new conversation via socket
+        // Use hostObjectId to ensure we look up by user ID, not email
+        const hostSocketId = onlineUsers.get(hostObjectId.toString());
+        if (hostSocketId) {
+          io.to(hostSocketId).emit('new-conversation', newConversation);
+        }
 
         res.status(201).json(newConversation);
       } catch (error) {
@@ -537,7 +617,6 @@ async function run() {
       }
     });
 
-
     // host req post
     app.post("/hostRequest", async (req, res) => {
       const newHost = req.body;
@@ -562,8 +641,8 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
-  // host manage property
-     app.get("/manageproperty", async (req, res) => {
+    // host manage property
+    app.get("/manageproperty", async (req, res) => {
       const cursor = await propertiesCollection.find().toArray();
       res.send(cursor);
     });
@@ -612,7 +691,6 @@ async function run() {
     //   }
     // });
 
-
     app.get("/bookinghotel", async (req, res) => {
       try {
         const { email } = req.query;
@@ -628,13 +706,12 @@ async function run() {
     app.get("/totalBookings", async (req, res) => {
       try {
         const totalBookings = await bookinghotelCollection.countDocuments();
-        res.json({ totalBookings }); 
+        res.json({ totalBookings });
       } catch (error) {
         console.error("Error fetching total bookings:", error);
         res.status(500).json({ message: "Server error" });
       }
     });
-
 
     //  app.get("/bookinghotel", async (req, res) => {
     //   try {
@@ -647,7 +724,6 @@ async function run() {
     //     res.status(500).json({ message: "Server error" });
     //   }
     // });
-
 
     app.patch("/bookings/:id", async (req, res) => {
       const { id } = req.params;
@@ -664,14 +740,16 @@ async function run() {
         }
 
         // Fetch the updated booking to send back
-        const updatedBooking = await bookinghotelCollection.findOne({ _id: new ObjectId(id) });
+        const updatedBooking = await bookinghotelCollection.findOne({
+          _id: new ObjectId(id),
+        });
         res.json({ booking: updatedBooking });
       } catch (err) {
         console.error("Error updating booking:", err);
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
-    // get bookings data with email based 
+    // get bookings data with email based
     app.get("/myBookings", async (req, res) => {
       try {
         const { email } = req.query;
@@ -729,7 +807,7 @@ async function run() {
             },
             {
               $addFields: {
-                hostId: "$hostUser._id",
+                id: "$hostUser._id",
                 hostName: "$propertyDetails.host",
                 propertyTitle: "$propertyDetails.title",
                 // Ensure propertyId is set
@@ -754,7 +832,7 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
-//  hoer
+    //  hoer
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
       try {
@@ -780,7 +858,7 @@ async function run() {
         console.error("Error creating booking:", error);
         res.status(500).json({
           message: "Failed to create booking",
-          error: error.message
+          error: error.message,
         });
       }
     });
@@ -887,14 +965,15 @@ async function run() {
         }
 
         // Fetch the updated booking to send back
-        const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
+        const updatedBooking = await propertiesCollection.findOne({
+          _id: new ObjectId(id),
+        });
         res.json({ booking: updatedBooking });
       } catch (err) {
         console.error("Error updating booking:", err);
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
-
 
     // host dashbord update api
     app.patch("/Property/:id", async (req, res) => {
@@ -912,14 +991,15 @@ async function run() {
         }
 
         // Fetch the updated booking to send back
-        const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
+        const updatedBooking = await propertiesCollection.findOne({
+          _id: new ObjectId(id),
+        });
         res.json({ booking: updatedBooking });
       } catch (err) {
         console.error("Error updating booking:", err);
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
-
 
     // Update property by ID
     app.put("/AddProperty/:id", async (req, res) => {
@@ -1054,15 +1134,11 @@ async function run() {
 
     // ==================== PAYMENT ENDPOINTS ====================
 
-
-
-    // get all payments 
+    // get all payments
     app.get("/payments", async (req, res) => {
       const results = await paymentsCollection.find().toArray();
       res.send(results);
-    })
-
-
+    });
 
     // Create Stripe Payment Intent
     app.post("/api/payment/create-payment-intent", async (req, res) => {
@@ -1214,156 +1290,162 @@ async function run() {
       }
     });
 
+    /**
+     * Create Experience
+     * POST /api/experiences
+     * Body: { name, email, title, description, location, photos: [url1, url2], userId (optional) }
+     * Note: No auth middleware for now. We rely on provided email/name from frontend.
+     */
+    app.post("/api/experiences", async (req, res) => {
+      try {
+        const { name, email, title, description, location, photos, userId } =
+          req.body;
 
-/**
- * Create Experience
- * POST /api/experiences
- * Body: { name, email, title, description, location, photos: [url1, url2], userId (optional) }
- * Note: No auth middleware for now. We rely on provided email/name from frontend.
- */
-app.post("/api/experiences", async (req, res) => {
-  try {
-    const { name, email, title, description, location, photos, userId } = req.body;
+        // Basic validation
+        if (!name || !email || !title || !description) {
+          return res.status(400).json({ error: "Missing required fields" });
+        }
 
-    // Basic validation
-    if (!name || !email || !title || !description) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
+        const experience = {
+          userId: userId ? String(userId) : null,
+          userName: name,
+          userEmail: email,
+          title,
+          description,
+          location: location || null,
+          photos: Array.isArray(photos) ? photos : [],
+          ratings: [], // { raterEmail, value }
+          avgRating: 0,
+          ratingsCount: 0,
+          createdAt: new Date(),
+        };
 
-    const experience = {
-      userId: userId ? String(userId) : null,
-      userName: name,
-      userEmail: email,
-      title,
-      description,
-      location: location || null,
-      photos: Array.isArray(photos) ? photos : [],
-      ratings: [], // { raterEmail, value }
-      avgRating: 0,
-      ratingsCount: 0,
-      createdAt: new Date(),
-    };
-
-    const result = await experiencesCollection.insertOne(experience);
-    res.status(201).json({ ...experience, _id: result.insertedId });
-  } catch (err) {
-    console.error("POST /api/experiences error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/**
- * Get all experiences
- * GET /api/experiences
- * Query: optional ?page=1&limit=10
- */
-app.get("/api/experiences", async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page || "1"));
-    const limit = Math.max(1, parseInt(req.query.limit || "20"));
-    const skip = (page - 1) * limit;
-
-    const cursor = experiencesCollection
-      .find({})
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const experiences = await cursor.toArray();
-    res.json(experiences);
-  } catch (err) {
-    console.error("GET /api/experiences error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/**
- * Rate an experience
- * POST /api/experiences/:id/rate
- * Body: { raterEmail, value }  // value integer 1..10
- * No duplicate ratings from same raterEmail allowed.
- */
-app.post("/api/experiences/:id/rate", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { raterEmail, value } = req.body;
-    const intVal = parseInt(value, 10);
-
-    if (!raterEmail || !id || isNaN(intVal) || intVal < 1 || intVal > 10) {
-      return res.status(400).json({ error: "Invalid rating data" });
-    }
-
-    const objId = new ObjectId(id);
-
-    // Check existing rating by same raterEmail
-    const already = await experiencesCollection.findOne({
-      _id: objId,
-      "ratings.raterEmail": raterEmail,
-    });
-
-    if (already) {
-      return res.status(400).json({ error: "You have already rated this experience" });
-    }
-
-    // Push rating and update count; then recalc avg
-    await experiencesCollection.updateOne(
-      { _id: objId },
-      {
-        $push: { ratings: { raterEmail, value: intVal } },
-        $inc: { ratingsCount: 1 },
+        const result = await experiencesCollection.insertOne(experience);
+        res.status(201).json({ ...experience, _id: result.insertedId });
+      } catch (err) {
+        console.error("POST /api/experiences error:", err);
+        res.status(500).json({ error: "Server error" });
       }
-    );
-
-    // Recalculate avgRating from ratings array
-    const updated = await experiencesCollection.findOne({ _id: objId });
-    const avg =
-      updated.ratings && updated.ratings.length > 0
-        ? updated.ratings.reduce((s, r) => s + r.value, 0) / updated.ratings.length
-        : 0;
-
-    await experiencesCollection.updateOne({ _id: objId }, { $set: { avgRating: avg } });
-
-    const final = await experiencesCollection.findOne({ _id: objId });
-    res.json(final);
-  } catch (err) {
-    console.error("POST /api/experiences/:id/rate error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/**
- * Delete experience (only by matching email)
- * DELETE /api/experiences/:id
- * Body: { email }  // client must supply creator email to authorize deletion (no auth middleware)
- */
-app.delete("/api/experiences/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { email } = req.body;
-
-    if (!id || !email) return res.status(400).json({ error: "Missing data" });
-
-    const objId = new ObjectId(id);
-
-    const result = await experiencesCollection.deleteOne({
-      _id: objId,
-      userEmail: email,
     });
 
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: "Experience not found or unauthorized" });
-    }
+    /**
+     * Get all experiences
+     * GET /api/experiences
+     * Query: optional ?page=1&limit=10
+     */
+    app.get("/api/experiences", async (req, res) => {
+      try {
+        const page = Math.max(1, parseInt(req.query.page || "1"));
+        const limit = Math.max(1, parseInt(req.query.limit || "20"));
+        const skip = (page - 1) * limit;
 
-    res.json({ message: "Experience deleted" });
-  } catch (err) {
-    console.error("DELETE /api/experiences/:id error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-/* ---------- End Experiences feature ---------- */
+        const cursor = experiencesCollection
+          .find({})
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit);
 
+        const experiences = await cursor.toArray();
+        res.json(experiences);
+      } catch (err) {
+        console.error("GET /api/experiences error:", err);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
 
+    /**
+     * Rate an experience
+     * POST /api/experiences/:id/rate
+     * Body: { raterEmail, value }  // value integer 1..10
+     * No duplicate ratings from same raterEmail allowed.
+     */
+    app.post("/api/experiences/:id/rate", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { raterEmail, value } = req.body;
+        const intVal = parseInt(value, 10);
 
+        if (!raterEmail || !id || isNaN(intVal) || intVal < 1 || intVal > 10) {
+          return res.status(400).json({ error: "Invalid rating data" });
+        }
+
+        const objId = new ObjectId(id);
+
+        // Check existing rating by same raterEmail
+        const already = await experiencesCollection.findOne({
+          _id: objId,
+          "ratings.raterEmail": raterEmail,
+        });
+
+        if (already) {
+          return res
+            .status(400)
+            .json({ error: "You have already rated this experience" });
+        }
+
+        // Push rating and update count; then recalc avg
+        await experiencesCollection.updateOne(
+          { _id: objId },
+          {
+            $push: { ratings: { raterEmail, value: intVal } },
+            $inc: { ratingsCount: 1 },
+          }
+        );
+
+        // Recalculate avgRating from ratings array
+        const updated = await experiencesCollection.findOne({ _id: objId });
+        const avg =
+          updated.ratings && updated.ratings.length > 0
+            ? updated.ratings.reduce((s, r) => s + r.value, 0) /
+              updated.ratings.length
+            : 0;
+
+        await experiencesCollection.updateOne(
+          { _id: objId },
+          { $set: { avgRating: avg } }
+        );
+
+        const final = await experiencesCollection.findOne({ _id: objId });
+        res.json(final);
+      } catch (err) {
+        console.error("POST /api/experiences/:id/rate error:", err);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
+
+    /**
+     * Delete experience (only by matching email)
+     * DELETE /api/experiences/:id
+     * Body: { email }  // client must supply creator email to authorize deletion (no auth middleware)
+     */
+    app.delete("/api/experiences/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { email } = req.body;
+
+        if (!id || !email)
+          return res.status(400).json({ error: "Missing data" });
+
+        const objId = new ObjectId(id);
+
+        const result = await experiencesCollection.deleteOne({
+          _id: objId,
+          userEmail: email,
+        });
+
+        if (result.deletedCount === 0) {
+          return res
+            .status(404)
+            .json({ error: "Experience not found or unauthorized" });
+        }
+
+        res.json({ message: "Experience deleted" });
+      } catch (err) {
+        console.error("DELETE /api/experiences/:id error:", err);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
+    /* ---------- End Experiences feature ---------- */
 
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
