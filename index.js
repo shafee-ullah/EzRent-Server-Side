@@ -618,10 +618,17 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
-       app.get("/bookinghotel", async (req, res) => {
-      const cursor = await bookinghotelCollection.find().toArray();
-      res.send(cursor);
+
+    app.get("/totalBookings", async (req, res) => {
+      try {
+        const totalBookings = await bookinghotelCollection.countDocuments();
+        res.json({ totalBookings }); 
+      } catch (error) {
+        console.error("Error fetching total bookings:", error);
+        res.status(500).json({ message: "Server error" });
+      }
     });
+
 
     //  app.get("/bookinghotel", async (req, res) => {
     //   try {
