@@ -5,6 +5,7 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
+const experienceRoutes = require("./routes/experienceRoutes");
 
 const app = express();
 
@@ -20,7 +21,8 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
-
+app.use("/api/experiences", experienceRoutes);
+app.use("/uploads", express.static("uploads"));
 
 // stripe account
 const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
@@ -50,7 +52,8 @@ async function run() {
     const hostRequestCollection = client.db("ezrent").collection("hostRequest");
     const paymentsCollection = client.db("ezrent").collection("payments");
     const wishListCollection = client.db("ezrent").collection("wishList");
-   
+    // Experiences collection
+    const experiencesCollection = client.db("ezrent").collection("experiences");
 
     // Chat collections
     const conversationsCollection = client
@@ -533,7 +536,6 @@ async function run() {
         res.status(500).send({ message: "Server error" });
       }
     });
-    // hello
 
     // host req post
     app.post("/hostRequest", async (req, res) => {
@@ -1141,6 +1143,157 @@ async function run() {
         });
       }
     });
+
+
+/**
+ * Create Experience
+ * POST /api/experiences
+ * Body: { name, email, title, description, location, photos: [url1, url2], userId (optional) }
+ * Note: No auth middleware for now. We rely on provided email/name from frontend.
+ */
+app.post("/api/experiences", async (req, res) => {
+  try {
+    const { name, email, title, description, location, photos, userId } = req.body;
+
+    // Basic validation
+    if (!name || !email || !title || !description) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const experience = {
+      userId: userId ? String(userId) : null,
+      userName: name,
+      userEmail: email,
+      title,
+      description,
+      location: location || null,
+      photos: Array.isArray(photos) ? photos : [],
+      ratings: [], // { raterEmail, value }
+      avgRating: 0,
+      ratingsCount: 0,
+      createdAt: new Date(),
+    };
+
+    const result = await experiencesCollection.insertOne(experience);
+    res.status(201).json({ ...experience, _id: result.insertedId });
+  } catch (err) {
+    console.error("POST /api/experiences error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * Get all experiences
+ * GET /api/experiences
+ * Query: optional ?page=1&limit=10
+ */
+app.get("/api/experiences", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page || "1"));
+    const limit = Math.max(1, parseInt(req.query.limit || "20"));
+    const skip = (page - 1) * limit;
+
+    const cursor = experiencesCollection
+      .find({})
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const experiences = await cursor.toArray();
+    res.json(experiences);
+  } catch (err) {
+    console.error("GET /api/experiences error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * Rate an experience
+ * POST /api/experiences/:id/rate
+ * Body: { raterEmail, value }  // value integer 1..10
+ * No duplicate ratings from same raterEmail allowed.
+ */
+app.post("/api/experiences/:id/rate", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { raterEmail, value } = req.body;
+    const intVal = parseInt(value, 10);
+
+    if (!raterEmail || !id || isNaN(intVal) || intVal < 1 || intVal > 10) {
+      return res.status(400).json({ error: "Invalid rating data" });
+    }
+
+    const objId = new ObjectId(id);
+
+    // Check existing rating by same raterEmail
+    const already = await experiencesCollection.findOne({
+      _id: objId,
+      "ratings.raterEmail": raterEmail,
+    });
+
+    if (already) {
+      return res.status(400).json({ error: "You have already rated this experience" });
+    }
+
+    // Push rating and update count; then recalc avg
+    await experiencesCollection.updateOne(
+      { _id: objId },
+      {
+        $push: { ratings: { raterEmail, value: intVal } },
+        $inc: { ratingsCount: 1 },
+      }
+    );
+
+    // Recalculate avgRating from ratings array
+    const updated = await experiencesCollection.findOne({ _id: objId });
+    const avg =
+      updated.ratings && updated.ratings.length > 0
+        ? updated.ratings.reduce((s, r) => s + r.value, 0) / updated.ratings.length
+        : 0;
+
+    await experiencesCollection.updateOne({ _id: objId }, { $set: { avgRating: avg } });
+
+    const final = await experiencesCollection.findOne({ _id: objId });
+    res.json(final);
+  } catch (err) {
+    console.error("POST /api/experiences/:id/rate error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * Delete experience (only by matching email)
+ * DELETE /api/experiences/:id
+ * Body: { email }  // client must supply creator email to authorize deletion (no auth middleware)
+ */
+app.delete("/api/experiences/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email } = req.body;
+
+    if (!id || !email) return res.status(400).json({ error: "Missing data" });
+
+    const objId = new ObjectId(id);
+
+    const result = await experiencesCollection.deleteOne({
+      _id: objId,
+      userEmail: email,
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: "Experience not found or unauthorized" });
+    }
+
+    res.json({ message: "Experience deleted" });
+  } catch (err) {
+    console.error("DELETE /api/experiences/:id error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+/* ---------- End Experiences feature ---------- */
+
+
+
 
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
