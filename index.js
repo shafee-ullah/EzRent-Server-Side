@@ -5,7 +5,7 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
-const experienceRoutes = require("./routes/experienceRoutes");
+// const experienceRoutes = require("./routes/experienceRoutes");
 
 const app = express();
 
@@ -21,7 +21,7 @@ const port = process.env.PORT || 5001;
 
 app.use(cors());
 app.use(express.json());
-app.use("/api/experiences", experienceRoutes);
+// app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
 
 // stripe account
@@ -42,7 +42,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const propertiesCollection = client.db("ezrent").collection("properties");
     const bookinghotelCollection = client
@@ -1448,7 +1448,7 @@ async function run() {
     /* ---------- End Experiences feature ---------- */
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
