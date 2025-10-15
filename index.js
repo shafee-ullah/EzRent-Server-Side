@@ -12,7 +12,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173", // Frontend URL
+    origin: "http://localhost:5173",
     methods: ["GET", "POST"],
   },
 });
@@ -42,7 +42,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
+    await client.connect();
 
     const propertiesCollection = client.db("ezrent").collection("properties");
     const bookinghotelCollection = client
@@ -537,6 +537,7 @@ async function run() {
       }
     });
 
+
     // host req post
     app.post("/hostRequest", async (req, res) => {
       const newHost = req.body;
@@ -561,15 +562,15 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
-
-    app.get("/manageproperty", async (req, res) => {
+  // host manage property
+     app.get("/manageproperty", async (req, res) => {
       const cursor = await propertiesCollection.find().toArray();
       res.send(cursor);
     });
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find().limit(8).toArray();
+      const cursor = await propertiesCollection.find().limit(11).toArray();
       res.send(cursor);
     });
 
@@ -580,10 +581,66 @@ async function run() {
       res.send(result);
     });
     //  guest booking data get api
+    //  app.get("/bookinghotel", async (req, res) => {
+    //   const { hostEmail } = req.query;
+
+    //   if (!hostEmail) {
+    //     return res.status(400).json({ message: "hostEmail query parameter is required" });
+    //   }
+
+    //   try {
+    //     // ✅ সব property array হিসেবে আনো
+    //     const properties = await propertiesCollection.find({ hostEmail }).toArray();
+
+    //     const propertyIds = properties.map((p) => new ObjectId(p._id));
+
+    //     if (propertyIds.length === 0) {
+    //       return res.json([]); // host এর কোনো property নেই
+    //     }
+
+    //     // ✅ Booking গুলোও array হিসেবে আনো
+    //     const bookings = await bookinghotelCollection
+    //       .find({ propertyId: { $in: propertyIds } })
+    //       .sort({ createdAt: -1 })
+    //       .toArray();
+
+    //     // ✅ নিশ্চিত করো তুমি শুধুমাত্র plain data পাঠাচ্ছো
+    //     res.json(bookings);
+    //   } catch (err) {
+    //     console.error("Error fetching bookings:", err);
+    //     res.status(500).json({ message: "Server error", error: err.message });
+    //   }
+    // });
+
+
     app.get("/bookinghotel", async (req, res) => {
-      const booking = await bookinghotelCollection.find().toArray();
-      res.send(booking);
+      try {
+        const { email } = req.query;
+        const query = email ? { email } : {}; // filter if email provided
+        const bookings = await bookinghotelCollection.find(query).toArray();
+        res.send(bookings);
+      } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res.status(500).json({ message: "Server error" });
+      }
     });
+       app.get("/bookinghotel", async (req, res) => {
+      const cursor = await bookinghotelCollection.find().toArray();
+      res.send(cursor);
+    });
+
+    //  app.get("/bookinghotel", async (req, res) => {
+    //   try {
+    //     const { email} = req.query;
+    //     const query = email ? { email } : {}; // filter if email provided
+    //     const bookings = await bookinghotelCollection.find(query).toArray();
+    //     res.send(bookings);
+    //   } catch (error) {
+    //     console.error("Error fetching bookings:", error);
+    //     res.status(500).json({ message: "Server error" });
+    //   }
+    // });
+
 
     app.patch("/bookings/:id", async (req, res) => {
       const { id } = req.params;
@@ -600,16 +657,14 @@ async function run() {
         }
 
         // Fetch the updated booking to send back
-        const updatedBooking = await bookinghotelCollection.findOne({
-          _id: new ObjectId(id),
-        });
+        const updatedBooking = await bookinghotelCollection.findOne({ _id: new ObjectId(id) });
         res.json({ booking: updatedBooking });
       } catch (err) {
         console.error("Error updating booking:", err);
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
-    // get bookings data with email based
+    // get bookings data with email based 
     app.get("/myBookings", async (req, res) => {
       try {
         const { email } = req.query;
@@ -718,7 +773,7 @@ async function run() {
         console.error("Error creating booking:", error);
         res.status(500).json({
           message: "Failed to create booking",
-          error: error.message,
+          error: error.message
         });
       }
     });
@@ -825,15 +880,14 @@ async function run() {
         }
 
         // Fetch the updated booking to send back
-        const updatedBooking = await propertiesCollection.findOne({
-          _id: new ObjectId(id),
-        });
+        const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
         res.json({ booking: updatedBooking });
       } catch (err) {
         console.error("Error updating booking:", err);
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
+
 
     // host dashbord update api
     app.patch("/Property/:id", async (req, res) => {
@@ -851,15 +905,14 @@ async function run() {
         }
 
         // Fetch the updated booking to send back
-        const updatedBooking = await propertiesCollection.findOne({
-          _id: new ObjectId(id),
-        });
+        const updatedBooking = await propertiesCollection.findOne({ _id: new ObjectId(id) });
         res.json({ booking: updatedBooking });
       } catch (err) {
         console.error("Error updating booking:", err);
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
+
 
     // Update property by ID
     app.put("/AddProperty/:id", async (req, res) => {
@@ -993,6 +1046,16 @@ async function run() {
     });
 
     // ==================== PAYMENT ENDPOINTS ====================
+
+
+
+    // get all payments 
+    app.get("/payments", async (req, res) => {
+      const results = await paymentsCollection.find().toArray();
+      res.send(results);
+    })
+
+
 
     // Create Stripe Payment Intent
     app.post("/api/payment/create-payment-intent", async (req, res) => {
@@ -1296,7 +1359,7 @@ app.delete("/api/experiences/:id", async (req, res) => {
 
 
     // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
+    await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
