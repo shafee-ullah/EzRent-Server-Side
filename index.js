@@ -17,7 +17,7 @@ const io = new Server(server, {
   },
 });
 
-const port = process.env.PORT || 5001;
+const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
@@ -649,7 +649,7 @@ async function run() {
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find().limit(11).toArray();
+      const cursor = await propertiesCollection.find().limit(12).toArray();
       res.send(cursor);
     });
 
