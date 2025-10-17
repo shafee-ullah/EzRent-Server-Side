@@ -795,10 +795,11 @@ async function run() {
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find().limit(11).toArray();
+      const cursor = await propertiesCollection.find({ 
+propertystatus: "active" }).limit(8).toArray();
       res.send(cursor);
     });
-
+  // ?hello
     app.get("/FeaturepropertiesDitels/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
