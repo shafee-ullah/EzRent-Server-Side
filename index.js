@@ -5,7 +5,7 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
-// const experienceRoutes = require("./routes/experienceRoutes");
+const experienceRoutes = require("./routes/experienceRoutes");
 
 const app = express();
 
@@ -21,7 +21,7 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
-// app.use("/api/experiences", experienceRoutes);
+app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
 
 // stripe account
@@ -109,15 +109,15 @@ async function run() {
       //     const conversation = await conversationsCollection.findOne({
       //       _id: new ObjectId(conversationId)
       //     });
-          
+
       //     if (!conversation) {
       //       socket.emit("message-error", { error: "Conversation not found" });
       //       return;
       //     }
 
       //     // Determine receiver ID
-      //     const receiverId = senderId === conversation.guestId.toString() 
-      //       ? conversation.hostId.toString() 
+      //     const receiverId = senderId === conversation.guestId.toString()
+      //       ? conversation.hostId.toString()
       //       : conversation.guestId.toString();
 
       //     // Save message to database
@@ -153,7 +153,7 @@ async function run() {
       //       senderId: senderId,
       //       receiverId: receiverId
       //     });
-          
+
       //     // Also send directly to receiver's socket if they're online
       //     const receiverSocketId = onlineUsers.get(receiverId);
       //     if (receiverSocketId) {
@@ -171,133 +171,144 @@ async function run() {
       // });
 
       // Handle new message
-// socket.on("send-message", async (data) => {
-//   try {
-//     const {
-//       conversationId,
-//       senderId,
-//       message,
-//       messageType = "text",
-//     } = data;
+      // socket.on("send-message", async (data) => {
+      //   try {
+      //     const {
+      //       conversationId,
+      //       senderId,
+      //       message,
+      //       messageType = "text",
+      //     } = data;
 
-//     // Get conversation to find both users
-//     const conversation = await conversationsCollection.findOne({
-//       _id: new ObjectId(conversationId)
-//     });
-    
-//     if (!conversation) {
-//       socket.emit("message-error", { error: "Conversation not found" });
-//       return;
-//     }
+      //     // Get conversation to find both users
+      //     const conversation = await conversationsCollection.findOne({
+      //       _id: new ObjectId(conversationId)
+      //     });
 
-//     // ✅ FIX: Keep receiverId as ObjectId
-//     const senderObjectId = new ObjectId(senderId);
-//     const receiverId = senderObjectId.equals(conversation.guestId)
-//       ? conversation.hostId
-//       : conversation.guestId;
+      //     if (!conversation) {
+      //       socket.emit("message-error", { error: "Conversation not found" });
+      //       return;
+      //     }
 
-//     // ✅ FIX: Store receiverId as ObjectId
-//     const newMessage = {
-//       conversationId: new ObjectId(conversationId),
-//       senderId: senderObjectId,
-//       receiverId: receiverId,  // Now stores ObjectId correctly
-//       message,
-//       messageType,
-//       timestamp: new Date(),
-//       read: false,
-//     };
+      //     // ✅ FIX: Keep receiverId as ObjectId
+      //     const senderObjectId = new ObjectId(senderId);
+      //     const receiverId = senderObjectId.equals(conversation.guestId)
+      //       ? conversation.hostId
+      //       : conversation.guestId;
 
-//     const result = await messagesCollection.insertOne(newMessage);
-//     newMessage._id = result.insertedId;
+      //     // ✅ FIX: Store receiverId as ObjectId
+      //     const newMessage = {
+      //       conversationId: new ObjectId(conversationId),
+      //       senderId: senderObjectId,
+      //       receiverId: receiverId,  // Now stores ObjectId correctly
+      //       message,
+      //       messageType,
+      //       timestamp: new Date(),
+      //       read: false,
+      //     };
 
-//     // Update conversation last message
-//     await conversationsCollection.updateOne(
-//       { _id: new ObjectId(conversationId) },
-//       {
-//         $set: {
-//           lastMessage: message,
-//           lastMessageTime: new Date(),
-//           lastMessageSender: senderObjectId,
-//           updatedAt: new Date(),
-//         },
-//       }
-//     );
+      //     const result = await messagesCollection.insertOne(newMessage);
+      //     newMessage._id = result.insertedId;
 
-//     // ✅ FIX: Convert to strings only for Socket.io emit
-//     const messageForEmit = {
-//       ...newMessage,
-//       conversationId: conversationId,
-//       senderId: senderId,
-//       receiverId: receiverId.toString(),
-//       _id: newMessage._id.toString(),
-//     };
+      //     // Update conversation last message
+      //     await conversationsCollection.updateOne(
+      //       { _id: new ObjectId(conversationId) },
+      //       {
+      //         $set: {
+      //           lastMessage: message,
+      //           lastMessageTime: new Date(),
+      //           lastMessageSender: senderObjectId,
+      //           updatedAt: new Date(),
+      //         },
+      //       }
+      //     );
 
-//     // Emit message to all users in the conversation room
-//     io.to(conversationId).emit("new-message", messageForEmit);
-    
-//     // ✅ FIX: Use string version for socket lookup
-//     const receiverSocketId = onlineUsers.get(receiverId.toString());
-//     if (receiverSocketId) {
-//       io.to(receiverSocketId).emit("new-message", messageForEmit);
-//     }
-    
-//   } catch (error) {
-//     console.error("Error sending message:", error);
-//     socket.emit("message-error", { error: "Failed to send message" });
-//   }
-// });
+      //     // ✅ FIX: Convert to strings only for Socket.io emit
+      //     const messageForEmit = {
+      //       ...newMessage,
+      //       conversationId: conversationId,
+      //       senderId: senderId,
+      //       receiverId: receiverId.toString(),
+      //       _id: newMessage._id.toString(),
+      //     };
 
-socket.on("send-message", async (data) => {
-  try {
-    const { conversationId, senderId, message, messageType = "text" } = data;
+      //     // Emit message to all users in the conversation room
+      //     io.to(conversationId).emit("new-message", messageForEmit);
 
-    const conversation = await conversationsCollection.findOne({
-      _id: new ObjectId(conversationId)
-    });
-    
-    if (!conversation) {
-      socket.emit("message-error", { error: "Conversation not found" });
-      return;
-    }
+      //     // ✅ FIX: Use string version for socket lookup
+      //     const receiverSocketId = onlineUsers.get(receiverId.toString());
+      //     if (receiverSocketId) {
+      //       io.to(receiverSocketId).emit("new-message", messageForEmit);
+      //     }
 
-    // 🔍 ADD THESE LOGS
-    // console.log("=== DEBUG MESSAGE SENDING ===");
-    // console.log("senderId from frontend:", senderId, typeof senderId);
-    // console.log("conversation.guestId:", conversation.guestId, typeof conversation.guestId);
-    // console.log("conversation.hostId:", conversation.hostId, typeof conversation.hostId);
-    
-    const senderObjectId = new ObjectId(senderId);
-    const receiverId = senderObjectId.equals(conversation.guestId)
-      ? conversation.hostId
-      : conversation.guestId;
-    
-    // console.log("Determined receiverId:", receiverId, typeof receiverId);
-    // console.log("receiverId constructor:", receiverId.constructor.name);
-    // console.log("=== END DEBUG ===");
+      //   } catch (error) {
+      //     console.error("Error sending message:", error);
+      //     socket.emit("message-error", { error: "Failed to send message" });
+      //   }
+      // });
 
-    const newMessage = {
-      conversationId: new ObjectId(conversationId),
-      senderId: senderObjectId,
-      receiverId: receiverId,
-      message,
-      messageType,
-      timestamp: new Date(),
-      read: false,
-    };
+      socket.on("send-message", async (data) => {
+        try {
+          const {
+            conversationId,
+            senderId,
+            message,
+            messageType = "text",
+          } = data;
 
-    const result = await messagesCollection.insertOne(newMessage);
-    console.log("Inserted message:", result.insertedId);
-    
-    // Check what was actually stored
-    const storedMessage = await messagesCollection.findOne({ _id: result.insertedId });
-    console.log("Stored message receiverId:", storedMessage.receiverId, typeof storedMessage.receiverId);
+          const conversation = await conversationsCollection.findOne({
+            _id: new ObjectId(conversationId),
+          });
 
-    // ... rest of your code
-  } catch (error) {
-    console.error("Error sending message:", error);
-    socket.emit("message-error", { error: "Failed to send message" });
-  }
-});
+          if (!conversation) {
+            socket.emit("message-error", { error: "Conversation not found" });
+            return;
+          }
+
+          // 🔍 ADD THESE LOGS
+          // console.log("=== DEBUG MESSAGE SENDING ===");
+          // console.log("senderId from frontend:", senderId, typeof senderId);
+          // console.log("conversation.guestId:", conversation.guestId, typeof conversation.guestId);
+          // console.log("conversation.hostId:", conversation.hostId, typeof conversation.hostId);
+
+          const senderObjectId = new ObjectId(senderId);
+          const receiverId = senderObjectId.equals(conversation.guestId)
+            ? conversation.hostId
+            : conversation.guestId;
+
+          // console.log("Determined receiverId:", receiverId, typeof receiverId);
+          // console.log("receiverId constructor:", receiverId.constructor.name);
+          // console.log("=== END DEBUG ===");
+
+          const newMessage = {
+            conversationId: new ObjectId(conversationId),
+            senderId: senderObjectId,
+            receiverId: receiverId,
+            message,
+            messageType,
+            timestamp: new Date(),
+            read: false,
+          };
+
+          const result = await messagesCollection.insertOne(newMessage);
+          console.log("Inserted message:", result.insertedId);
+
+          // Check what was actually stored
+          const storedMessage = await messagesCollection.findOne({
+            _id: result.insertedId,
+          });
+          console.log(
+            "Stored message receiverId:",
+            storedMessage.receiverId,
+            typeof storedMessage.receiverId
+          );
+
+          // ... rest of your code
+        } catch (error) {
+          console.error("Error sending message:", error);
+          socket.emit("message-error", { error: "Failed to send message" });
+        }
+      });
 
       // Handle typing indicators
       socket.on("typing-start", (data) => {
@@ -370,14 +381,14 @@ socket.on("send-message", async (data) => {
         let hostObjectId = hostId;
 
         // Check if guestId is an email
-        if (guestId && typeof guestId === 'string' && guestId.includes('@')) {
+        if (guestId && typeof guestId === "string" && guestId.includes("@")) {
           const guestUser = await usersCollection.findOne({ email: guestId });
           if (guestUser) {
             guestObjectId = guestUser._id;
           } else {
             return res.status(404).json({ message: "Guest user not found" });
           }
-        } else if (guestId && typeof guestId === 'string') {
+        } else if (guestId && typeof guestId === "string") {
           try {
             guestObjectId = new ObjectId(guestId);
           } catch (error) {
@@ -386,7 +397,7 @@ socket.on("send-message", async (data) => {
         }
 
         // Check if hostId is an email
-        if (hostId && typeof hostId === 'string' && hostId.includes('@')) {
+        if (hostId && typeof hostId === "string" && hostId.includes("@")) {
           const hostUser = await usersCollection.findOne({ email: hostId });
           if (hostUser) {
             hostObjectId = hostUser._id;
@@ -394,7 +405,7 @@ socket.on("send-message", async (data) => {
           } else {
             return res.status(404).json({ message: "Host user not found" });
           }
-        } else if (hostId && typeof hostId === 'string') {
+        } else if (hostId && typeof hostId === "string") {
           try {
             hostObjectId = new ObjectId(hostId);
           } catch (error) {
@@ -418,7 +429,11 @@ socket.on("send-message", async (data) => {
         const newConversation = {
           guestId: guestObjectId,
           hostId: hostObjectId,
-          propertyId: propertyId ? (propertyId !== hostId ? new ObjectId(propertyId) : null) : null,
+          propertyId: propertyId
+            ? propertyId !== hostId
+              ? new ObjectId(propertyId)
+              : null
+            : null,
           propertyTitle: propertyTitle || null,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -426,23 +441,25 @@ socket.on("send-message", async (data) => {
           lastMessageTime: null,
           lastMessageSender: null,
         };
-        
+
         // Log the conversation data for debugging
         console.log("Creating new conversation:", {
           guestId: guestObjectId.toString(),
           hostId: hostObjectId.toString(),
-          propertyId: newConversation.propertyId ? newConversation.propertyId.toString() : null,
-          propertyTitle: propertyTitle
+          propertyId: newConversation.propertyId
+            ? newConversation.propertyId.toString()
+            : null,
+          propertyTitle: propertyTitle,
         });
 
         const result = await conversationsCollection.insertOne(newConversation);
         newConversation._id = result.insertedId;
-        
+
         // Notify host about new conversation via socket
         // Use hostObjectId to ensure we look up by user ID, not email
         const hostSocketId = onlineUsers.get(hostObjectId.toString());
         if (hostSocketId) {
-          io.to(hostSocketId).emit('new-conversation', newConversation);
+          io.to(hostSocketId).emit("new-conversation", newConversation);
         }
 
         res.status(201).json(newConversation);
@@ -962,97 +979,97 @@ socket.on("send-message", async (data) => {
     //   }
     // });
 
-app.get("/myBookings", async (req, res) => {
-  try {
-    const { email } = req.query;
-    const query = email ? { email } : {};
+    app.get("/myBookings", async (req, res) => {
+      try {
+        const { email } = req.query;
+        const query = email ? { email } : {};
 
-    const bookings = await bookinghotelCollection
-      .aggregate([
-        { $match: query },
-        {
-          $addFields: {
-            propertyObjectId: {
-              $cond: {
-                if: { $eq: [{ $type: "$propertyId" }, "objectId"] },
-                then: "$propertyId",
-                else: {
+        const bookings = await bookinghotelCollection
+          .aggregate([
+            { $match: query },
+            {
+              $addFields: {
+                propertyObjectId: {
                   $cond: {
-                    if: { $eq: [{ $type: "$propertyId" }, "string"] },
-                    then: { $toObjectId: "$propertyId" },
-                    else: null,
+                    if: { $eq: [{ $type: "$propertyId" }, "objectId"] },
+                    then: "$propertyId",
+                    else: {
+                      $cond: {
+                        if: { $eq: [{ $type: "$propertyId" }, "string"] },
+                        then: { $toObjectId: "$propertyId" },
+                        else: null,
+                      },
+                    },
                   },
                 },
               },
             },
-          },
-        },
-        {
-          $lookup: {
-            from: "properties",
-            localField: "propertyObjectId",
-            foreignField: "_id",
-            as: "propertyDetails",
-          },
-        },
-        {
-          $unwind: {
-            path: "$propertyDetails",
-            preserveNullAndEmptyArrays: true,
-          },
-        },
-        {
-          $lookup: {
-            from: "users",
-            localField: "propertyDetails.email",
-            foreignField: "email",
-            as: "hostUser",
-          },
-        },
-        {
-          $unwind: {
-            path: "$hostUser",
-            preserveNullAndEmptyArrays: true,
-          },
-        },
-        {
-          $addFields: {
-            hostId: "$hostUser._id",
-            hostName: "$propertyDetails.host",
-            propertyTitle: "$propertyDetails.title",
-            propertyId: {
-              $ifNull: ["$propertyObjectId", "$propertyId"],
+            {
+              $lookup: {
+                from: "properties",
+                localField: "propertyObjectId",
+                foreignField: "_id",
+                as: "propertyDetails",
+              },
             },
-          },
-        },
-        {
-          $project: {
-            propertyDetails: 0,
-            hostUser: 0,
-            propertyObjectId: 0,
-          },
-        },
-      ])
-      .toArray();
+            {
+              $unwind: {
+                path: "$propertyDetails",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $lookup: {
+                from: "users",
+                localField: "propertyDetails.email",
+                foreignField: "email",
+                as: "hostUser",
+              },
+            },
+            {
+              $unwind: {
+                path: "$hostUser",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $addFields: {
+                hostId: "$hostUser._id",
+                hostName: "$propertyDetails.host",
+                propertyTitle: "$propertyDetails.title",
+                propertyId: {
+                  $ifNull: ["$propertyObjectId", "$propertyId"],
+                },
+              },
+            },
+            {
+              $project: {
+                propertyDetails: 0,
+                hostUser: 0,
+                propertyObjectId: 0,
+              },
+            },
+          ])
+          .toArray();
 
-    // ✅ ADD THESE CONSOLE LOGS
-    // console.log("=== MYBOOKINGS DEBUG ===");
-    // console.log("Query email:", email);
-    // console.log("Number of bookings found:", bookings.length);
-    if (bookings.length > 0) {
-      // console.log("First booking raw:", bookings[0]);
-      // console.log("hostId:", bookings[0].hostId);
-      // console.log("hostName:", bookings[0].hostName);
-      // console.log("propertyId:", bookings[0].propertyId);
-    }
-    // console.log("=======================");
+        // ✅ ADD THESE CONSOLE LOGS
+        // console.log("=== MYBOOKINGS DEBUG ===");
+        // console.log("Query email:", email);
+        // console.log("Number of bookings found:", bookings.length);
+        if (bookings.length > 0) {
+          // console.log("First booking raw:", bookings[0]);
+          // console.log("hostId:", bookings[0].hostId);
+          // console.log("hostName:", bookings[0].hostName);
+          // console.log("propertyId:", bookings[0].propertyId);
+        }
+        // console.log("=======================");
 
-    res.send(bookings);
-  } catch (error) {
-    console.error("Error fetching bookings:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+        res.send(bookings);
+      } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
     //  hoer
     // booking data post
@@ -1523,8 +1540,17 @@ app.get("/myBookings", async (req, res) => {
         const { name, email, title, description, location, photos, userId } =
           req.body;
 
+        console.log("Received experience data:", req.body);
+        console.log("Required fields check:", {
+          name,
+          email,
+          title,
+          description,
+        });
+
         // Basic validation
         if (!name || !email || !title || !description) {
+          console.log("Validation failed - missing required fields");
           return res.status(400).json({ error: "Missing required fields" });
         }
 

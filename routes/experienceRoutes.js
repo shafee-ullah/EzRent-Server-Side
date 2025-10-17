@@ -20,7 +20,13 @@ const upload = multer({ storage });
 
 // 📸 Upload route
 router.post("/upload", upload.array("photos", 5), (req, res) => {
-  const urls = req.files.map((file) => `http://localhost:5000/${file.path}`);
+  // Fix URL generation to use proper path format with forward slashes
+  const urls = req.files.map((file) => {
+    // Normalize path with forward slashes for URLs
+    const normalizedPath = file.path.replace(/\\/g, '/');
+    return `http://localhost:5000/${normalizedPath}`;
+  });
+  console.log("Generated photo URLs:", urls);
   res.json({ urls });
 });
 
