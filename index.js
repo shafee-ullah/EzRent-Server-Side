@@ -5,7 +5,7 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
-// const experienceRoutes = require("./routes/experienceRoutes");
+const experienceRoutes = require("./routes/experienceRoutes");
 
 const app = express();
 
@@ -17,11 +17,11 @@ const io = new Server(server, {
   },
 });
 
-const port = process.env.PORT || 5001;
+const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
-// app.use("/api/experiences", experienceRoutes);
+app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
 
 // stripe account
@@ -68,13 +68,13 @@ async function run() {
     const onlineUsers = new Map();
 
     io.on("connection", (socket) => {
-      console.log("User connected:", socket.id);
+      // console.log("User connected:", socket.id);
 
       // User joins with their user ID
       socket.on("join", (userId) => {
         onlineUsers.set(userId, socket.id);
         socket.userId = userId;
-        console.log(`User ${userId} joined with socket ${socket.id}`);
+        // console.log(`User ${userId} joined with socket ${socket.id}`);
 
         // Notify others that user is online
         socket.broadcast.emit("user-online", userId);
@@ -83,20 +83,171 @@ async function run() {
       // Join a conversation room
       socket.on("join-conversation", (conversationId) => {
         socket.join(conversationId);
-        console.log(
-          `User ${socket.userId} joined conversation ${conversationId}`
-        );
+        // console.log(
+        //   `User ${socket.userId} joined conversation ${conversationId}`
+        // );
       });
 
       // Leave a conversation room
       socket.on("leave-conversation", (conversationId) => {
         socket.leave(conversationId);
-        console.log(
-          `User ${socket.userId} left conversation ${conversationId}`
-        );
+        // console.log(
+        //   `User ${socket.userId} left conversation ${conversationId}`
+        // );
       });
 
       // Handle new message
+      // socket.on("send-message", async (data) => {
+      //   try {
+      //     const {
+      //       conversationId,
+      //       senderId,
+      //       message,
+      //       messageType = "text",
+      //     } = data;
+
+      //     // Get conversation to find both users
+      //     const conversation = await conversationsCollection.findOne({
+      //       _id: new ObjectId(conversationId)
+      //     });
+
+      //     if (!conversation) {
+      //       socket.emit("message-error", { error: "Conversation not found" });
+      //       return;
+      //     }
+
+      //     // Determine receiver ID
+      //     const receiverId = senderId === conversation.guestId.toString()
+      //       ? conversation.hostId.toString()
+      //       : conversation.guestId.toString();
+
+      //     // Save message to database
+      //     const newMessage = {
+      //       conversationId: new ObjectId(conversationId),
+      //       senderId: new ObjectId(senderId),
+      //       receiverId: receiverId,
+      //       message,
+      //       messageType,
+      //       timestamp: new Date(),
+      //       read: false,
+      //     };
+
+      //     const result = await messagesCollection.insertOne(newMessage);
+      //     newMessage._id = result.insertedId;
+
+      //     // Update conversation last message
+      //     await conversationsCollection.updateOne(
+      //       { _id: new ObjectId(conversationId) },
+      //       {
+      //         $set: {
+      //           lastMessage: message,
+      //           lastMessageTime: new Date(),
+      //           lastMessageSender: new ObjectId(senderId),
+      //         },
+      //       }
+      //     );
+
+      //     // Emit message to all users in the conversation room
+      //     io.to(conversationId).emit("new-message", {
+      //       ...newMessage,
+      //       conversationId: conversationId,
+      //       senderId: senderId,
+      //       receiverId: receiverId
+      //     });
+
+      //     // Also send directly to receiver's socket if they're online
+      //     const receiverSocketId = onlineUsers.get(receiverId);
+      //     if (receiverSocketId) {
+      //       io.to(receiverSocketId).emit("new-message", {
+      //         ...newMessage,
+      //         conversationId: conversationId,
+      //         senderId: senderId,
+      //         receiverId: receiverId
+      //       });
+      //     }
+      //   } catch (error) {
+      //     console.error("Error sending message:", error);
+      //     socket.emit("message-error", { error: "Failed to send message" });
+      //   }
+      // });
+
+      // Handle new message
+      // socket.on("send-message", async (data) => {
+      //   try {
+      //     const {
+      //       conversationId,
+      //       senderId,
+      //       message,
+      //       messageType = "text",
+      //     } = data;
+
+      //     // Get conversation to find both users
+      //     const conversation = await conversationsCollection.findOne({
+      //       _id: new ObjectId(conversationId)
+      //     });
+
+      //     if (!conversation) {
+      //       socket.emit("message-error", { error: "Conversation not found" });
+      //       return;
+      //     }
+
+      //     // ✅ FIX: Keep receiverId as ObjectId
+      //     const senderObjectId = new ObjectId(senderId);
+      //     const receiverId = senderObjectId.equals(conversation.guestId)
+      //       ? conversation.hostId
+      //       : conversation.guestId;
+
+      //     // ✅ FIX: Store receiverId as ObjectId
+      //     const newMessage = {
+      //       conversationId: new ObjectId(conversationId),
+      //       senderId: senderObjectId,
+      //       receiverId: receiverId,  // Now stores ObjectId correctly
+      //       message,
+      //       messageType,
+      //       timestamp: new Date(),
+      //       read: false,
+      //     };
+
+      //     const result = await messagesCollection.insertOne(newMessage);
+      //     newMessage._id = result.insertedId;
+
+      //     // Update conversation last message
+      //     await conversationsCollection.updateOne(
+      //       { _id: new ObjectId(conversationId) },
+      //       {
+      //         $set: {
+      //           lastMessage: message,
+      //           lastMessageTime: new Date(),
+      //           lastMessageSender: senderObjectId,
+      //           updatedAt: new Date(),
+      //         },
+      //       }
+      //     );
+
+      //     // ✅ FIX: Convert to strings only for Socket.io emit
+      //     const messageForEmit = {
+      //       ...newMessage,
+      //       conversationId: conversationId,
+      //       senderId: senderId,
+      //       receiverId: receiverId.toString(),
+      //       _id: newMessage._id.toString(),
+      //     };
+
+      //     // Emit message to all users in the conversation room
+      //     io.to(conversationId).emit("new-message", messageForEmit);
+
+      //     // ✅ FIX: Use string version for socket lookup
+      //     const receiverSocketId = onlineUsers.get(receiverId.toString());
+      //     if (receiverSocketId) {
+      //       io.to(receiverSocketId).emit("new-message", messageForEmit);
+      //     }
+
+      //   } catch (error) {
+      //     console.error("Error sending message:", error);
+      //     socket.emit("message-error", { error: "Failed to send message" });
+      //   }
+      // });
+
       socket.on("send-message", async (data) => {
         try {
           const {
@@ -106,9 +257,8 @@ async function run() {
             messageType = "text",
           } = data;
 
-          // Get conversation to find both users
           const conversation = await conversationsCollection.findOne({
-            _id: new ObjectId(conversationId)
+            _id: new ObjectId(conversationId),
           });
 
           if (!conversation) {
@@ -117,14 +267,17 @@ async function run() {
           }
 
           // Determine receiver ID
-          const receiverId = senderId === conversation.guestId.toString()
-            ? conversation.hostId.toString()
+          const receiverId = senderId === conversation.guestId.toString() 
+            ? conversation.hostId.toString() 
             : conversation.guestId.toString();
 
-          // Save message to database
+          // console.log("Determined receiverId:", receiverId, typeof receiverId);
+          // console.log("receiverId constructor:", receiverId.constructor.name);
+          // console.log("=== END DEBUG ===");
+
           const newMessage = {
             conversationId: new ObjectId(conversationId),
-            senderId: new ObjectId(senderId),
+            senderId: senderObjectId,
             receiverId: receiverId,
             message,
             messageType,
@@ -133,7 +286,7 @@ async function run() {
           };
 
           const result = await messagesCollection.insertOne(newMessage);
-          newMessage._id = result.insertedId;
+          console.log("Inserted message:", result.insertedId);
 
           // Update conversation last message
           await conversationsCollection.updateOne(
@@ -154,7 +307,7 @@ async function run() {
             senderId: senderId,
             receiverId: receiverId
           });
-
+          
           // Also send directly to receiver's socket if they're online
           const receiverSocketId = onlineUsers.get(receiverId);
           if (receiverSocketId) {
@@ -216,7 +369,7 @@ async function run() {
       socket.on("disconnect", () => {
         if (socket.userId) {
           onlineUsers.delete(socket.userId);
-          console.log(`User ${socket.userId} disconnected`);
+          // console.log(`User ${socket.userId} disconnected`);
 
           // Notify others that user is offline
           socket.broadcast.emit("user-offline", socket.userId);
@@ -242,14 +395,14 @@ async function run() {
         let hostObjectId = hostId;
 
         // Check if guestId is an email
-        if (guestId && typeof guestId === 'string' && guestId.includes('@')) {
+        if (guestId && typeof guestId === "string" && guestId.includes("@")) {
           const guestUser = await usersCollection.findOne({ email: guestId });
           if (guestUser) {
             guestObjectId = guestUser._id;
           } else {
             return res.status(404).json({ message: "Guest user not found" });
           }
-        } else if (guestId && typeof guestId === 'string') {
+        } else if (guestId && typeof guestId === "string") {
           try {
             guestObjectId = new ObjectId(guestId);
           } catch (error) {
@@ -258,15 +411,15 @@ async function run() {
         }
 
         // Check if hostId is an email
-        if (hostId && typeof hostId === 'string' && hostId.includes('@')) {
+        if (hostId && typeof hostId === "string" && hostId.includes("@")) {
           const hostUser = await usersCollection.findOne({ email: hostId });
           if (hostUser) {
             hostObjectId = hostUser._id;
-            console.log(hostObjectId);
+            // console.log(hostObjectId);
           } else {
             return res.status(404).json({ message: "Host user not found" });
           }
-        } else if (hostId && typeof hostId === 'string') {
+        } else if (hostId && typeof hostId === "string") {
           try {
             hostObjectId = new ObjectId(hostId);
           } catch (error) {
@@ -290,7 +443,11 @@ async function run() {
         const newConversation = {
           guestId: guestObjectId,
           hostId: hostObjectId,
-          propertyId: propertyId ? (propertyId !== hostId ? new ObjectId(propertyId) : null) : null,
+          propertyId: propertyId
+            ? propertyId !== hostId
+              ? new ObjectId(propertyId)
+              : null
+            : null,
           propertyTitle: propertyTitle || null,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -303,8 +460,10 @@ async function run() {
         console.log("Creating new conversation:", {
           guestId: guestObjectId.toString(),
           hostId: hostObjectId.toString(),
-          propertyId: newConversation.propertyId ? newConversation.propertyId.toString() : null,
-          propertyTitle: propertyTitle
+          propertyId: newConversation.propertyId
+            ? newConversation.propertyId.toString()
+            : null,
+          propertyTitle: propertyTitle,
         });
 
         const result = await conversationsCollection.insertOne(newConversation);
@@ -314,7 +473,7 @@ async function run() {
         // Use hostObjectId to ensure we look up by user ID, not email
         const hostSocketId = onlineUsers.get(hostObjectId.toString());
         if (hostSocketId) {
-          io.to(hostSocketId).emit('new-conversation', newConversation);
+          io.to(hostSocketId).emit("new-conversation", newConversation);
         }
 
         res.status(201).json(newConversation);
@@ -650,10 +809,11 @@ async function run() {
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find().limit(11).toArray();
+      const cursor = await propertiesCollection.find({ 
+propertystatus: "active" }).limit(8).toArray();
       res.send(cursor);
     });
-
+  // ?hello
     app.get("/FeaturepropertiesDitels/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -751,17 +911,98 @@ async function run() {
       }
     });
     // get bookings data with email based
+    // app.get("/myBookings", async (req, res) => {
+    //   try {
+    //     const { email } = req.query;
+    //     const query = email ? { email } : {}; // filter if email provided
+
+    //     // Use aggregation to join with properties and users collections to get host information
+    //     const bookings = await bookinghotelCollection
+    //       .aggregate([
+    //         { $match: query },
+    //         {
+    //           // Add a field to convert propertyId string to ObjectId if needed
+    //           $addFields: {
+    //             propertyObjectId: {
+    //               $cond: {
+    //                 if: { $eq: [{ $type: "$propertyId" }, "objectId"] },
+    //                 then: "$propertyId",
+    //                 else: {
+    //                   $cond: {
+    //                     if: { $eq: [{ $type: "$propertyId" }, "string"] },
+    //                     then: { $toObjectId: "$propertyId" },
+    //                     else: null,
+    //                   },
+    //                 },
+    //               },
+    //             },
+    //           },
+    //         },
+    //         {
+    //           $lookup: {
+    //             from: "properties",
+    //             localField: "propertyObjectId",
+    //             foreignField: "_id",
+    //             as: "propertyDetails",
+    //           },
+    //         },
+    //         {
+    //           $unwind: {
+    //             path: "$propertyDetails",
+    //             preserveNullAndEmptyArrays: true,
+    //           },
+    //         },
+    //         {
+    //           $lookup: {
+    //             from: "users",
+    //             localField: "propertyDetails.email",
+    //             foreignField: "email",
+    //             as: "hostUser",
+    //           },
+    //         },
+    //         {
+    //           $unwind: {
+    //             path: "$hostUser",
+    //             preserveNullAndEmptyArrays: true,
+    //           },
+    //         },
+    //         {
+    //           $addFields: {
+    //             id: "$hostUser._id",
+    //             hostName: "$propertyDetails.host",
+    //             propertyTitle: "$propertyDetails.title",
+    //             // Ensure propertyId is set
+    //             propertyId: {
+    //               $ifNull: ["$propertyObjectId", "$propertyId"],
+    //             },
+    //           },
+    //         },
+    //         {
+    //           $project: {
+    //             propertyDetails: 0,
+    //             hostUser: 0,
+    //             propertyObjectId: 0, // Remove temporary field
+    //           },
+    //         },
+    //       ])
+    //       .toArray();
+
+    //     res.send(bookings);
+    //   } catch (error) {
+    //     console.error("Error fetching bookings:", error);
+    //     res.status(500).json({ message: "Server error" });
+    //   }
+    // });
+
     app.get("/myBookings", async (req, res) => {
       try {
         const { email } = req.query;
-        const query = email ? { email } : {}; // filter if email provided
+        const query = email ? { email } : {};
 
-        // Use aggregation to join with properties and users collections to get host information
         const bookings = await bookinghotelCollection
           .aggregate([
             { $match: query },
             {
-              // Add a field to convert propertyId string to ObjectId if needed
               $addFields: {
                 propertyObjectId: {
                   $cond: {
@@ -808,10 +1049,9 @@ async function run() {
             },
             {
               $addFields: {
-                id: "$hostUser._id",
+                hostId: "$hostUser._id",
                 hostName: "$propertyDetails.host",
                 propertyTitle: "$propertyDetails.title",
-                // Ensure propertyId is set
                 propertyId: {
                   $ifNull: ["$propertyObjectId", "$propertyId"],
                 },
@@ -821,11 +1061,23 @@ async function run() {
               $project: {
                 propertyDetails: 0,
                 hostUser: 0,
-                propertyObjectId: 0, // Remove temporary field
+                propertyObjectId: 0,
               },
             },
           ])
           .toArray();
+
+        // ✅ ADD THESE CONSOLE LOGS
+        // console.log("=== MYBOOKINGS DEBUG ===");
+        // console.log("Query email:", email);
+        // console.log("Number of bookings found:", bookings.length);
+        if (bookings.length > 0) {
+          // console.log("First booking raw:", bookings[0]);
+          // console.log("hostId:", bookings[0].hostId);
+          // console.log("hostName:", bookings[0].hostName);
+          // console.log("propertyId:", bookings[0].propertyId);
+        }
+        // console.log("=======================");
 
         res.send(bookings);
       } catch (error) {
@@ -833,6 +1085,7 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
+
     //  hoer
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
@@ -1302,8 +1555,17 @@ async function run() {
         const { name, email, title, description, location, photos, userId } =
           req.body;
 
+        console.log("Received experience data:", req.body);
+        console.log("Required fields check:", {
+          name,
+          email,
+          title,
+          description,
+        });
+
         // Basic validation
         if (!name || !email || !title || !description) {
+          console.log("Validation failed - missing required fields");
           return res.status(400).json({ error: "Missing required fields" });
         }
 

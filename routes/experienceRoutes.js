@@ -1,24 +1,26 @@
-// routes/experienceRoutes.js
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const { v2: cloudinary } = require("cloudinary");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
 const router = express.Router();
 
-// Ensure uploads directory exists
-const uploadDir = "uploads/";
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-
-// Configure Multer storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + path.extname(file.originalname)),
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "uploads", // folder name in Cloudinary
+    allowed_formats: ["jpg", "png", "jpeg"],
+  },
+});
+
 const upload = multer({ storage });
 
-// 📸 Upload route
 router.post("/upload", upload.array("photos", 5), (req, res) => {
   const urls = req.files.map((file) => `https://ez-rent-server-side.vercel.app/${file.path}`);
   res.json({ urls });
