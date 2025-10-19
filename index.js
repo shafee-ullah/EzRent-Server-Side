@@ -54,6 +54,7 @@ async function run() {
     const wishListCollection = client.db("ezrent").collection("wishList");
     // Experiences collection
     const experiencesCollection = client.db("ezrent").collection("experiences");
+    const reviewCollection = client.db("ezrent").collection("reviews");
 
     // Chat collections
     const conversationsCollection = client
@@ -265,16 +266,10 @@ async function run() {
             return;
           }
 
-          // 🔍 ADD THESE LOGS
-          // console.log("=== DEBUG MESSAGE SENDING ===");
-          // console.log("senderId from frontend:", senderId, typeof senderId);
-          // console.log("conversation.guestId:", conversation.guestId, typeof conversation.guestId);
-          // console.log("conversation.hostId:", conversation.hostId, typeof conversation.hostId);
-
-          const senderObjectId = new ObjectId(senderId);
-          const receiverId = senderObjectId.equals(conversation.guestId)
-            ? conversation.hostId
-            : conversation.guestId;
+          // Determine receiver ID
+          const receiverId = senderId === conversation.guestId.toString() 
+            ? conversation.hostId.toString() 
+            : conversation.guestId.toString();
 
           // console.log("Determined receiverId:", receiverId, typeof receiverId);
           // console.log("receiverId constructor:", receiverId.constructor.name);
@@ -293,17 +288,36 @@ async function run() {
           const result = await messagesCollection.insertOne(newMessage);
           console.log("Inserted message:", result.insertedId);
 
-          // Check what was actually stored
-          const storedMessage = await messagesCollection.findOne({
-            _id: result.insertedId,
-          });
-          console.log(
-            "Stored message receiverId:",
-            storedMessage.receiverId,
-            typeof storedMessage.receiverId
+          // Update conversation last message
+          await conversationsCollection.updateOne(
+            { _id: new ObjectId(conversationId) },
+            {
+              $set: {
+                lastMessage: message,
+                lastMessageTime: new Date(),
+                lastMessageSender: new ObjectId(senderId),
+              },
+            }
           );
 
-          // ... rest of your code
+          // Emit message to all users in the conversation room
+          io.to(conversationId).emit("new-message", {
+            ...newMessage,
+            conversationId: conversationId,
+            senderId: senderId,
+            receiverId: receiverId
+          });
+          
+          // Also send directly to receiver's socket if they're online
+          const receiverSocketId = onlineUsers.get(receiverId);
+          if (receiverSocketId) {
+            io.to(receiverSocketId).emit("new-message", {
+              ...newMessage,
+              conversationId: conversationId,
+              senderId: senderId,
+              receiverId: receiverId
+            });
+          }
         } catch (error) {
           console.error("Error sending message:", error);
           socket.emit("message-error", { error: "Failed to send message" });
@@ -1646,7 +1660,7 @@ propertystatus: "active" }).limit(8).toArray();
         const avg =
           updated.ratings && updated.ratings.length > 0
             ? updated.ratings.reduce((s, r) => s + r.value, 0) /
-              updated.ratings.length
+            updated.ratings.length
             : 0;
 
         await experiencesCollection.updateOne(
@@ -1661,6 +1675,75 @@ propertystatus: "active" }).limit(8).toArray();
         res.status(500).json({ error: "Server error" });
       }
     });
+
+    // review section 
+
+    app.post("/api/reviews", async (req, res) => {
+      try {
+        const reviewData = req.body;
+        const newReview = await reviewCollection.insertOne(reviewData);
+        res.status(201).json({ success: true, data: newReview });
+      } catch (error) {
+        console.error("Error adding review:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+      }
+    });
+
+    // GET: All reviews
+    app.get("/api/reviews", async (req, res) => {
+      try {
+        const { reviewCardId } = req.query; // get ?reviewCardId=xyz
+        const query = reviewCardId ? { reviewCardId } : {}; // filter only if provided
+        const reviews = await reviewCollection.find(query).toArray();
+        res.json({ success: true, data: reviews });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // Update a review
+    app.put("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({ success: false, message: "Invalid ID" });
+        }
+
+        const result = await reviewCollection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          { $set: req.body },
+          { returnDocument: "after" }
+        );
+
+        if (!result.value) {
+          return res.status(404).json({ success: false, message: "Review not found" });
+        }
+
+        res.status(200).json({ success: true, data: result.value });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
+
+    // Delete a review
+    app.delete("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await reviewCollection.deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ success: false, message: "Review not found" });
+        }
+
+        res.status(200).json({ success: true, message: "Review deleted successfully" });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
+
+
 
     /**
      * Delete experience (only by matching email)
