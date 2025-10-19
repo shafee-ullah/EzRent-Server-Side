@@ -20,7 +20,7 @@ const upload = multer({ storage });
 
 // 📸 Upload route
 router.post("/upload", upload.array("photos", 5), (req, res) => {
-  const urls = req.files.map((file) => `http://localhost:5001/${file.path}`);
+  const urls = req.files.map((file) => `https://ez-rent-server-side.vercel.app/${file.path}`);
   res.json({ urls });
 });
 

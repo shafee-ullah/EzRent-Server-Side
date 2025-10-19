@@ -54,6 +54,7 @@ async function run() {
     const wishListCollection = client.db("ezrent").collection("wishList");
     // Experiences collection
     const experiencesCollection = client.db("ezrent").collection("experiences");
+    const reviewCollection = client.db("ezrent").collection("reviews");
 
     // Chat collections
     const conversationsCollection = client
@@ -109,15 +110,15 @@ async function run() {
           const conversation = await conversationsCollection.findOne({
             _id: new ObjectId(conversationId)
           });
-          
+
           if (!conversation) {
             socket.emit("message-error", { error: "Conversation not found" });
             return;
           }
 
           // Determine receiver ID
-          const receiverId = senderId === conversation.guestId.toString() 
-            ? conversation.hostId.toString() 
+          const receiverId = senderId === conversation.guestId.toString()
+            ? conversation.hostId.toString()
             : conversation.guestId.toString();
 
           // Save message to database
@@ -153,7 +154,7 @@ async function run() {
             senderId: senderId,
             receiverId: receiverId
           });
-          
+
           // Also send directly to receiver's socket if they're online
           const receiverSocketId = onlineUsers.get(receiverId);
           if (receiverSocketId) {
@@ -297,7 +298,7 @@ async function run() {
           lastMessageTime: null,
           lastMessageSender: null,
         };
-        
+
         // Log the conversation data for debugging
         console.log("Creating new conversation:", {
           guestId: guestObjectId.toString(),
@@ -308,7 +309,7 @@ async function run() {
 
         const result = await conversationsCollection.insertOne(newConversation);
         newConversation._id = result.insertedId;
-        
+
         // Notify host about new conversation via socket
         // Use hostObjectId to ensure we look up by user ID, not email
         const hostSocketId = onlineUsers.get(hostObjectId.toString());
@@ -1397,7 +1398,7 @@ async function run() {
         const avg =
           updated.ratings && updated.ratings.length > 0
             ? updated.ratings.reduce((s, r) => s + r.value, 0) /
-              updated.ratings.length
+            updated.ratings.length
             : 0;
 
         await experiencesCollection.updateOne(
@@ -1412,6 +1413,75 @@ async function run() {
         res.status(500).json({ error: "Server error" });
       }
     });
+
+    // review section 
+
+    app.post("/api/reviews", async (req, res) => {
+      try {
+        const reviewData = req.body;
+        const newReview = await reviewCollection.insertOne(reviewData);
+        res.status(201).json({ success: true, data: newReview });
+      } catch (error) {
+        console.error("Error adding review:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+      }
+    });
+
+    // GET: All reviews
+    app.get("/api/reviews", async (req, res) => {
+      try {
+        const { reviewCardId } = req.query; // get ?reviewCardId=xyz
+        const query = reviewCardId ? { reviewCardId } : {}; // filter only if provided
+        const reviews = await reviewCollection.find(query).toArray();
+        res.json({ success: true, data: reviews });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // Update a review
+    app.put("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({ success: false, message: "Invalid ID" });
+        }
+
+        const result = await reviewCollection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          { $set: req.body },
+          { returnDocument: "after" }
+        );
+
+        if (!result.value) {
+          return res.status(404).json({ success: false, message: "Review not found" });
+        }
+
+        res.status(200).json({ success: true, data: result.value });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
+
+    // Delete a review
+    app.delete("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await reviewCollection.deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ success: false, message: "Review not found" });
+        }
+
+        res.status(200).json({ success: true, message: "Review deleted successfully" });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
+
+
 
     /**
      * Delete experience (only by matching email)
