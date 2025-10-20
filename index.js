@@ -8,18 +8,39 @@ const http = require("http");
 const experienceRoutes = require("./routes/experienceRoutes");
 
 const app = express();
+const port = process.env.PORT || 5000;
 
+// Request Logger Middleware
+const requestLogger = (req, res, next) => {
+  console.log("\n=== Request Details ===");
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log("Headers:", req.headers);
+  console.log("Query:", req.query);
+  console.log("Body:", req.body);
+  console.log("========================\n");
+  next();
+};
+
+// Middleware Setup
+app.use(requestLogger);
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: false,
+  })
+);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
+    origin: "*",
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: false,
   },
 });
 
-const port = process.env.PORT || 5000;
-
-app.use(cors());
 app.use(express.json());
 app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
@@ -29,6 +50,7 @@ const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 
 // Database connected
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.spelf9f.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
