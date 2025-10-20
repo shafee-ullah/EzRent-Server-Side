@@ -26,19 +26,23 @@ app.use(requestLogger);
 app.use(
   cors({
     origin: "*",
-    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // ← Added PATCH
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
     credentials: false,
   })
 );
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    origin: "*", // ← Match your main CORS config (or specify allowed origins)
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // ← More permissive
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
     credentials: false,
   },
+  // Add these for better Vercel compatibility
+  transports: ['polling', 'websocket'], // Try polling first
+  allowEIO3: true, // Enable compatibility
 });
 
 app.use(express.json());
