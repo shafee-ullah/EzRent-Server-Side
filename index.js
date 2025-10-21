@@ -312,7 +312,7 @@ async function run() {
           const newMessage = {
             conversationId: new ObjectId(conversationId),
             senderId: senderObjectId,
-            receiverId: receiverId,
+            receiverId: new ObjectId(receiverId),
             message,
             messageType,
             timestamp: new Date(),
