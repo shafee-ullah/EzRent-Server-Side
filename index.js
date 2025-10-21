@@ -7,6 +7,7 @@ const { Server } = require("socket.io");
 const http = require("http");
 const experienceRoutes = require("./routes/experienceRoutes");
 
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -41,7 +42,7 @@ const io = new Server(server, {
     credentials: false,
   },
   // Add these for better Vercel compatibility
-  transports: ['polling', 'websocket'], // Try polling first
+  transports: ["polling", "websocket"], // Try polling first
   allowEIO3: true, // Enable compatibility
 });
 
@@ -49,12 +50,14 @@ app.use(express.json());
 app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
 
+
+
+
 // stripe account
 const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 
 // Database connected
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.spelf9f.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -293,9 +296,10 @@ async function run() {
           }
 
           // Determine receiver ID
-          const receiverId = senderId === conversation.guestId.toString() 
-            ? conversation.hostId.toString() 
-            : conversation.guestId.toString();
+          const receiverId =
+            senderId === conversation.guestId.toString()
+              ? conversation.hostId.toString()
+              : conversation.guestId.toString();
 
           // console.log("Determined receiverId:", receiverId, typeof receiverId);
           // console.log("receiverId constructor:", receiverId.constructor.name);
@@ -331,9 +335,9 @@ async function run() {
             ...newMessage,
             conversationId: conversationId,
             senderId: senderId,
-            receiverId: receiverId
+            receiverId: receiverId,
           });
-          
+
           // Also send directly to receiver's socket if they're online
           const receiverSocketId = onlineUsers.get(receiverId);
           if (receiverSocketId) {
@@ -341,7 +345,7 @@ async function run() {
               ...newMessage,
               conversationId: conversationId,
               senderId: senderId,
-              receiverId: receiverId
+              receiverId: receiverId,
             });
           }
         } catch (error) {
@@ -835,11 +839,15 @@ async function run() {
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find({ 
-propertystatus: "active" }).limit(8).toArray();
+      const cursor = await propertiesCollection
+        .find({
+          propertystatus: "active",
+        })
+        .limit(8)
+        .toArray();
       res.send(cursor);
     });
-  // ?hello
+    // ?hello
     app.get("/FeaturepropertiesDitels/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -1686,7 +1694,7 @@ propertystatus: "active" }).limit(8).toArray();
         const avg =
           updated.ratings && updated.ratings.length > 0
             ? updated.ratings.reduce((s, r) => s + r.value, 0) /
-            updated.ratings.length
+              updated.ratings.length
             : 0;
 
         await experiencesCollection.updateOne(
@@ -1702,7 +1710,7 @@ propertystatus: "active" }).limit(8).toArray();
       }
     });
 
-    // review section 
+    // review section
 
     app.post("/api/reviews", async (req, res) => {
       try {
@@ -1732,7 +1740,9 @@ propertystatus: "active" }).limit(8).toArray();
       try {
         const { id } = req.params;
         if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ success: false, message: "Invalid ID" });
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid ID" });
         }
 
         const result = await reviewCollection.findOneAndUpdate(
@@ -1742,7 +1752,9 @@ propertystatus: "active" }).limit(8).toArray();
         );
 
         if (!result.value) {
-          return res.status(404).json({ success: false, message: "Review not found" });
+          return res
+            .status(404)
+            .json({ success: false, message: "Review not found" });
         }
 
         res.status(200).json({ success: true, data: result.value });
@@ -1756,20 +1768,24 @@ propertystatus: "active" }).limit(8).toArray();
     app.delete("/api/reviews/:id", async (req, res) => {
       try {
         const { id } = req.params;
-        const result = await reviewCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await reviewCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
         if (result.deletedCount === 0) {
-          return res.status(404).json({ success: false, message: "Review not found" });
+          return res
+            .status(404)
+            .json({ success: false, message: "Review not found" });
         }
 
-        res.status(200).json({ success: true, message: "Review deleted successfully" });
+        res
+          .status(200)
+          .json({ success: true, message: "Review deleted successfully" });
       } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: error.message });
       }
     });
-
-
 
     /**
      * Delete experience (only by matching email)
@@ -1816,6 +1832,7 @@ propertystatus: "active" }).limit(8).toArray();
   }
 }
 run().catch(console.dir);
+
 
 app.get("/", (req, res) => {
   res.send("Server is  running");
