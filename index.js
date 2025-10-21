@@ -789,14 +789,15 @@ async function run() {
     });
     // host manage property
     app.get("/manageproperty", async (req, res) => {
-      const cursor = await propertiesCollection.find().toArray();
+      const cursor = await propertiesCollection.find({status:"avaliable",propertystatus:"active"}
+).toArray();
       res.send(cursor);
     });
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
       const cursor = await propertiesCollection.find({ 
-propertystatus: "active" }).limit(8).toArray();
+propertystatus: "active", status:"avaliable"}).limit(8).toArray();
       res.send(cursor);
     });
   // ?hello
@@ -1071,8 +1072,20 @@ propertystatus: "active" }).limit(8).toArray();
         res.status(500).json({ message: "Server error" });
       }
     });
-
-    //  hoer
+    // real time clanander bookong api 
+app.get("/checkBooking", async (req, res) => {
+  const { roomId, checkIn, checkOut } = req.query;
+  const existingBooking = await bookinghotelCollection.findOne({
+    id: roomId,
+    $or: [
+      {
+        Checkin: { $lte: checkOut },
+        Checkout: { $gte: checkIn },
+      },
+    ],
+  });
+  res.send({ isBooked: !!existingBooking });
+});
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
       try {
