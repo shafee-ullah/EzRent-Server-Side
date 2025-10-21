@@ -9,18 +9,43 @@ const experienceRoutes = require("./routes/experienceRoutes");
 const { send } = require("process");
 
 const app = express();
+const port = process.env.PORT || 5000;
+
+// Request Logger Middleware
+const requestLogger = (req, res, next) => {
+  console.log("\n=== Request Details ===");
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log("Headers:", req.headers);
+  console.log("Query:", req.query);
+  console.log("Body:", req.body);
+  console.log("========================\n");
+  next();
+};
+
+// Middleware Setup
+app.use(requestLogger);
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // ← Added PATCH
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: false,
+  })
+);
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
+    origin: "*", // ← Match your main CORS config (or specify allowed origins)
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // ← More permissive
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: false,
   },
+  // Add these for better Vercel compatibility
+  transports: ['polling', 'websocket'], // Try polling first
+  allowEIO3: true, // Enable compatibility
 });
 
-const port = process.env.PORT || 5000;
-
-app.use(cors());
 app.use(express.json());
 app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
@@ -30,6 +55,7 @@ const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 
 // Database connected
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.spelf9f.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -804,14 +830,15 @@ async function run() {
     });
     // host manage property
     app.get("/manageproperty", async (req, res) => {
-      const cursor = await propertiesCollection.find().toArray();
+      const cursor = await propertiesCollection.find({status:"avaliable",propertystatus:"active"}
+).toArray();
       res.send(cursor);
     });
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
       const cursor = await propertiesCollection.find({ 
-propertystatus: "active" }).limit(8).toArray();
+propertystatus: "active", status:"avaliable"}).limit(8).toArray();
       res.send(cursor);
     });
   // ?hello
@@ -998,8 +1025,20 @@ propertystatus: "active" }).limit(8).toArray();
         res.status(500).json({ message: "Server error" });
       }
     });
-
-    //  hoer
+    // real time clanander bookong api 
+app.get("/checkBooking", async (req, res) => {
+  const { roomId, checkIn, checkOut } = req.query;
+  const existingBooking = await bookinghotelCollection.findOne({
+    id: roomId,
+    $or: [
+      {
+        Checkin: { $lte: checkOut },
+        Checkout: { $gte: checkIn },
+      },
+    ],
+  });
+  res.send({ isBooked: !!existingBooking });
+});
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
       try {
