@@ -23,7 +23,7 @@ const upload = multer({ storage });
 
 router.post("/upload", upload.array("photos", 5), (req, res) => {
   const urls = req.files.map(
-    (file) => `https://ezrent-backend.vercel.app/${file.path}`
+    (file) => `ezrent-server-side-production.up.railway.app/${file.path}`
   );
   res.json({ urls });
 });
