@@ -6,7 +6,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
 const experienceRoutes = require("./routes/experienceRoutes");
-
+const { send } = require("process");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -300,10 +300,9 @@ async function run() {
           }
 
           // Determine receiver ID
-          const receiverId =
-            senderId === conversation.guestId.toString()
-              ? conversation.hostId.toString()
-              : conversation.guestId.toString();
+          const receiverId = senderId === conversation.guestId.toString()
+            ? conversation.hostId.toString()
+            : conversation.guestId.toString();
 
           // console.log("Determined receiverId:", receiverId, typeof receiverId);
           // console.log("receiverId constructor:", receiverId.constructor.name);
@@ -837,15 +836,16 @@ async function run() {
     });
     // host manage property
     app.get("/manageproperty", async (req, res) => {
-      const cursor = await propertiesCollection.find({status:"avaliable",propertystatus:"active"}
-).toArray();
+      const cursor = await propertiesCollection.find({ status: "avaliable", propertystatus: "active" }
+      ).toArray();
       res.send(cursor);
     });
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find({ 
-propertystatus: "active", status:"avaliable"}).limit(8).toArray();
+      const cursor = await propertiesCollection.find({
+        propertystatus: "active", status: "avaliable"
+      }).limit(8).toArray();
       res.send(cursor);
     });
     // ?hello
@@ -945,89 +945,6 @@ propertystatus: "active", status:"avaliable"}).limit(8).toArray();
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
-    // get bookings data with email based
-    // app.get("/myBookings", async (req, res) => {
-    //   try {
-    //     const { email } = req.query;
-    //     const query = email ? { email } : {}; // filter if email provided
-
-    //     // Use aggregation to join with properties and users collections to get host information
-    //     const bookings = await bookinghotelCollection
-    //       .aggregate([
-    //         { $match: query },
-    //         {
-    //           // Add a field to convert propertyId string to ObjectId if needed
-    //           $addFields: {
-    //             propertyObjectId: {
-    //               $cond: {
-    //                 if: { $eq: [{ $type: "$propertyId" }, "objectId"] },
-    //                 then: "$propertyId",
-    //                 else: {
-    //                   $cond: {
-    //                     if: { $eq: [{ $type: "$propertyId" }, "string"] },
-    //                     then: { $toObjectId: "$propertyId" },
-    //                     else: null,
-    //                   },
-    //                 },
-    //               },
-    //             },
-    //           },
-    //         },
-    //         {
-    //           $lookup: {
-    //             from: "properties",
-    //             localField: "propertyObjectId",
-    //             foreignField: "_id",
-    //             as: "propertyDetails",
-    //           },
-    //         },
-    //         {
-    //           $unwind: {
-    //             path: "$propertyDetails",
-    //             preserveNullAndEmptyArrays: true,
-    //           },
-    //         },
-    //         {
-    //           $lookup: {
-    //             from: "users",
-    //             localField: "propertyDetails.email",
-    //             foreignField: "email",
-    //             as: "hostUser",
-    //           },
-    //         },
-    //         {
-    //           $unwind: {
-    //             path: "$hostUser",
-    //             preserveNullAndEmptyArrays: true,
-    //           },
-    //         },
-    //         {
-    //           $addFields: {
-    //             id: "$hostUser._id",
-    //             hostName: "$propertyDetails.host",
-    //             propertyTitle: "$propertyDetails.title",
-    //             // Ensure propertyId is set
-    //             propertyId: {
-    //               $ifNull: ["$propertyObjectId", "$propertyId"],
-    //             },
-    //           },
-    //         },
-    //         {
-    //           $project: {
-    //             propertyDetails: 0,
-    //             hostUser: 0,
-    //             propertyObjectId: 0, // Remove temporary field
-    //           },
-    //         },
-    //       ])
-    //       .toArray();
-
-    //     res.send(bookings);
-    //   } catch (error) {
-    //     console.error("Error fetching bookings:", error);
-    //     res.status(500).json({ message: "Server error" });
-    //   }
-    // });
 
     app.get("/myBookings", async (req, res) => {
       try {
@@ -1101,11 +1018,6 @@ propertystatus: "active", status:"avaliable"}).limit(8).toArray();
             },
           ])
           .toArray();
-
-        // ✅ ADD THESE CONSOLE LOGS
-        // console.log("=== MYBOOKINGS DEBUG ===");
-        // console.log("Query email:", email);
-        // console.log("Number of bookings found:", bookings.length);
         if (bookings.length > 0) {
           // console.log("First booking raw:", bookings[0]);
           // console.log("hostId:", bookings[0].hostId);
@@ -1121,19 +1033,19 @@ propertystatus: "active", status:"avaliable"}).limit(8).toArray();
       }
     });
     // real time clanander bookong api 
-app.get("/checkBooking", async (req, res) => {
-  const { roomId, checkIn, checkOut } = req.query;
-  const existingBooking = await bookinghotelCollection.findOne({
-    id: roomId,
-    $or: [
-      {
-        Checkin: { $lte: checkOut },
-        Checkout: { $gte: checkIn },
-      },
-    ],
-  });
-  res.send({ isBooked: !!existingBooking });
-});
+    app.get("/checkBooking", async (req, res) => {
+      const { roomId, checkIn, checkOut } = req.query;
+      const existingBooking = await bookinghotelCollection.findOne({
+        id: roomId,
+        $or: [
+          {
+            Checkin: { $lte: checkOut },
+            Checkout: { $gte: checkIn },
+          },
+        ],
+      });
+      res.send({ isBooked: !!existingBooking });
+    });
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
       try {
@@ -1736,7 +1648,7 @@ app.get("/checkBooking", async (req, res) => {
       }
     });
 
-    // GET: All reviews
+    // GET:  reviews with email
     app.get("/api/reviews", async (req, res) => {
       try {
         const { reviewCardId } = req.query; // get ?reviewCardId=xyz
@@ -1799,6 +1711,32 @@ app.get("/checkBooking", async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
       }
     });
+
+    app.get("/api/allReview", async (req, res) => {
+      const result = await reviewCollection.find().toArray();
+      res.send(result)
+    })
+
+    app.get("/api/hostReview", async (req, res) => {
+      try {
+        const { email } = req.query; // get ?email= from query params
+        let query = {};
+
+        // if email is provided, filter by it
+        if (email) {
+          query = { reviewEmail : email };
+        }
+
+        const result = await reviewCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
+
+
+
 
     /**
      * Delete experience (only by matching email)
