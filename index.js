@@ -789,7 +789,7 @@ async function run() {
     });
     // host manage property
     app.get("/manageproperty", async (req, res) => {
-      const cursor = await propertiesCollection.find({status:"avaliable",propertystatus:"active"}
+      const cursor = await propertiesCollection.find(
 ).toArray();
       res.send(cursor);
     });
@@ -797,7 +797,7 @@ async function run() {
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
       const cursor = await propertiesCollection.find({ 
-propertystatus: "active", status:"avaliable"}).limit(8).toArray();
+ status:"avaliable"}).limit(8).toArray();
       res.send(cursor);
     });
   // ?hello
