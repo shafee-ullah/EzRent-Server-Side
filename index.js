@@ -33,29 +33,35 @@ app.use(
   })
 );
 
+// Create HTTP server
 const server = http.createServer(app);
+
+// Initialize Socket.IO - optimized for Railway
 const io = new Server(server, {
   cors: {
-    origin: "*", // ← Match your main CORS config (or specify allowed origins)
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // ← More permissive
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
     credentials: false,
   },
-  // Add these for better Vercel compatibility
-  transports: ['polling', 'websocket'], // Try polling first
-  allowEIO3: true, // Enable compatibility
+  transports: ['websocket', 'polling'], // WebSocket first on Railway
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 app.use(express.json());
 app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
 
+
+
+
 // stripe account
 const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 
 // Database connected
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.spelf9f.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -305,7 +311,7 @@ async function run() {
           const newMessage = {
             conversationId: new ObjectId(conversationId),
             senderId: senderObjectId,
-            receiverId: receiverId,
+            receiverId: new ObjectId(receiverId),
             message,
             messageType,
             timestamp: new Date(),
@@ -332,7 +338,7 @@ async function run() {
             ...newMessage,
             conversationId: conversationId,
             senderId: senderId,
-            receiverId: receiverId
+            receiverId: receiverId,
           });
 
           // Also send directly to receiver's socket if they're online
@@ -342,7 +348,7 @@ async function run() {
               ...newMessage,
               conversationId: conversationId,
               senderId: senderId,
-              receiverId: receiverId
+              receiverId: receiverId,
             });
           }
         } catch (error) {
@@ -1613,7 +1619,7 @@ async function run() {
         const avg =
           updated.ratings && updated.ratings.length > 0
             ? updated.ratings.reduce((s, r) => s + r.value, 0) /
-            updated.ratings.length
+              updated.ratings.length
             : 0;
 
         await experiencesCollection.updateOne(
@@ -1629,7 +1635,7 @@ async function run() {
       }
     });
 
-    // review section 
+    // review section
 
     app.post("/api/reviews", async (req, res) => {
       try {
@@ -1659,7 +1665,9 @@ async function run() {
       try {
         const { id } = req.params;
         if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ success: false, message: "Invalid ID" });
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid ID" });
         }
 
         const result = await reviewCollection.findOneAndUpdate(
@@ -1669,7 +1677,9 @@ async function run() {
         );
 
         if (!result.value) {
-          return res.status(404).json({ success: false, message: "Review not found" });
+          return res
+            .status(404)
+            .json({ success: false, message: "Review not found" });
         }
 
         res.status(200).json({ success: true, data: result.value });
@@ -1683,13 +1693,19 @@ async function run() {
     app.delete("/api/reviews/:id", async (req, res) => {
       try {
         const { id } = req.params;
-        const result = await reviewCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await reviewCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
         if (result.deletedCount === 0) {
-          return res.status(404).json({ success: false, message: "Review not found" });
+          return res
+            .status(404)
+            .json({ success: false, message: "Review not found" });
         }
 
-        res.status(200).json({ success: true, message: "Review deleted successfully" });
+        res
+          .status(200)
+          .json({ success: true, message: "Review deleted successfully" });
       } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: error.message });
@@ -1767,6 +1783,7 @@ async function run() {
   }
 }
 run().catch(console.dir);
+
 
 app.get("/", (req, res) => {
   res.send("Server is  running");
