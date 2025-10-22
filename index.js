@@ -6,8 +6,32 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { Server } = require("socket.io");
 const http = require("http");
 const experienceRoutes = require("./routes/experienceRoutes");
+const { send } = require("process");
 
 const app = express();
+const port = process.env.PORT || 5000;
+
+// Request Logger Middleware
+const requestLogger = (req, res, next) => {
+  // console.log("\n=== Request Details ===");
+  // console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  // console.log("Headers:", req.headers);
+  // console.log("Query:", req.query);
+  // console.log("Body:", req.body);
+  // console.log("========================\n");
+  next();
+};
+
+// Middleware Setup
+app.use(requestLogger);
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // ← Added PATCH
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: false,
+  })
+);
 
 // Create HTTP server
 const server = http.createServer(app);
@@ -26,9 +50,6 @@ const io = new Server(server, {
   pingInterval: 25000,
 });
 
-const port = process.env.PORT || 5000;
-
-app.use(cors());
 app.use(express.json());
 app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
