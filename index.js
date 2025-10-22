@@ -72,6 +72,8 @@ async function run() {
       .db("ezrent")
       .collection("conversations");
     const messagesCollection = client.db("ezrent").collection("messages");
+    const reviewCollection = client.db("ezrent").collection("reviews")
+
 
     // ==================== SOCKET.IO SETUP ====================
 
@@ -826,17 +828,18 @@ async function run() {
     // host manage property
     app.get("/manageproperty", async (req, res) => {
       const cursor = await propertiesCollection.find(
-).toArray();
+      ).toArray();
       res.send(cursor);
     });
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find({ 
- status:"avaliable"}).limit(8).toArray();
+      const cursor = await propertiesCollection.find({
+        status: "avaliable"
+      }).limit(8).toArray();
       res.send(cursor);
     });
-  // ?hello
+    // ?hello
     app.get("/FeaturepropertiesDitels/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -1109,19 +1112,19 @@ async function run() {
       }
     });
     // real time clanander bookong api 
-app.get("/checkBooking", async (req, res) => {
-  const { roomId, checkIn, checkOut } = req.query;
-  const existingBooking = await bookinghotelCollection.findOne({
-    id: roomId,
-    $or: [
-      {
-        Checkin: { $lte: checkOut },
-        Checkout: { $gte: checkIn },
-      },
-    ],
-  });
-  res.send({ isBooked: !!existingBooking });
-});
+    app.get("/checkBooking", async (req, res) => {
+      const { roomId, checkIn, checkOut } = req.query;
+      const existingBooking = await bookinghotelCollection.findOne({
+        id: roomId,
+        $or: [
+          {
+            Checkin: { $lte: checkOut },
+            Checkout: { $gte: checkIn },
+          },
+        ],
+      });
+      res.send({ isBooked: !!existingBooking });
+    });
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
       try {
@@ -1696,7 +1699,7 @@ app.get("/checkBooking", async (req, res) => {
         const avg =
           updated.ratings && updated.ratings.length > 0
             ? updated.ratings.reduce((s, r) => s + r.value, 0) /
-              updated.ratings.length
+            updated.ratings.length
             : 0;
 
         await experiencesCollection.updateOne(
@@ -1801,7 +1804,7 @@ app.get("/checkBooking", async (req, res) => {
 
         // if email is provided, filter by it
         if (email) {
-          query = { reviewEmail : email };
+          query = { reviewEmail: email };
         }
 
         const result = await reviewCollection.find(query).toArray();
