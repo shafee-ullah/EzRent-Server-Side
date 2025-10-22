@@ -1101,6 +1101,7 @@ app.get("/checkBooking", async (req, res) => {
           bookingData.propertyId = new ObjectId(bookingData.id);
         }
 
+        // hello
         // Add timestamp
         bookingData.createdAt = new Date();
         bookingData.updatedAt = new Date();
