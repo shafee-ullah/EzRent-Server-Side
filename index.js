@@ -294,8 +294,8 @@ async function run() {
           }
 
           // Determine receiver ID
-          const receiverId = senderId === conversation.guestId.toString() 
-            ? conversation.hostId.toString() 
+          const receiverId = senderId === conversation.guestId.toString()
+            ? conversation.hostId.toString()
             : conversation.guestId.toString();
 
           // console.log("Determined receiverId:", receiverId, typeof receiverId);
@@ -334,7 +334,7 @@ async function run() {
             senderId: senderId,
             receiverId: receiverId
           });
-          
+
           // Also send directly to receiver's socket if they're online
           const receiverSocketId = onlineUsers.get(receiverId);
           if (receiverSocketId) {
@@ -830,18 +830,19 @@ async function run() {
     });
     // host manage property
     app.get("/manageproperty", async (req, res) => {
-      const cursor = await propertiesCollection.find({status:"avaliable",propertystatus:"active"}
-).toArray();
+      const cursor = await propertiesCollection.find({ status: "avaliable", propertystatus: "active" }
+      ).toArray();
       res.send(cursor);
     });
 
     //git api  limit 8 data  home page
     app.get("/FeaturedProperties", async (req, res) => {
-      const cursor = await propertiesCollection.find({ 
-propertystatus: "active", status:"avaliable"}).limit(8).toArray();
+      const cursor = await propertiesCollection.find({
+        propertystatus: "active", status: "avaliable"
+      }).limit(8).toArray();
       res.send(cursor);
     });
-  // ?hello
+    // ?hello
     app.get("/FeaturepropertiesDitels/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -1026,19 +1027,19 @@ propertystatus: "active", status:"avaliable"}).limit(8).toArray();
       }
     });
     // real time clanander bookong api 
-app.get("/checkBooking", async (req, res) => {
-  const { roomId, checkIn, checkOut } = req.query;
-  const existingBooking = await bookinghotelCollection.findOne({
-    id: roomId,
-    $or: [
-      {
-        Checkin: { $lte: checkOut },
-        Checkout: { $gte: checkIn },
-      },
-    ],
-  });
-  res.send({ isBooked: !!existingBooking });
-});
+    app.get("/checkBooking", async (req, res) => {
+      const { roomId, checkIn, checkOut } = req.query;
+      const existingBooking = await bookinghotelCollection.findOne({
+        id: roomId,
+        $or: [
+          {
+            Checkin: { $lte: checkOut },
+            Checkout: { $gte: checkIn },
+          },
+        ],
+      });
+      res.send({ isBooked: !!existingBooking });
+    });
     // booking data post
     app.post("/bookinghotel", async (req, res) => {
       try {
@@ -1695,10 +1696,29 @@ app.get("/checkBooking", async (req, res) => {
       }
     });
 
-    app.get("/api/allReview" , async(req , res) => {
+    app.get("/api/allReview", async (req, res) => {
       const result = await reviewCollection.find().toArray();
       res.send(result)
     })
+
+    app.get("/api/hostReview", async (req, res) => {
+      try {
+        const { email } = req.query; // get ?email= from query params
+        let query = {};
+
+        // if email is provided, filter by it
+        if (email) {
+          query = { reviewEmail : email };
+        }
+
+        const result = await reviewCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
+
 
 
 
