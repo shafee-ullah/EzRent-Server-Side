@@ -9,12 +9,21 @@ const experienceRoutes = require("./routes/experienceRoutes");
 
 const app = express();
 
+// Create HTTP server
 const server = http.createServer(app);
+
+// Initialize Socket.IO - optimized for Railway
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: false,
   },
+  transports: ['websocket', 'polling'], // WebSocket first on Railway
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 const port = process.env.PORT || 5000;
@@ -23,6 +32,9 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/experiences", experienceRoutes);
 app.use("/uploads", express.static("uploads"));
+
+
+
 
 // stripe account
 const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
@@ -283,7 +295,7 @@ async function run() {
           const newMessage = {
             conversationId: new ObjectId(conversationId),
             senderId: senderObjectId,
-            receiverId: receiverId,
+            receiverId: new ObjectId(receiverId),
             message,
             messageType,
             timestamp: new Date(),
@@ -293,9 +305,24 @@ async function run() {
           const result = await messagesCollection.insertOne(newMessage);
           console.log("Inserted message:", result.insertedId);
 
-          // Check what was actually stored
-          const storedMessage = await messagesCollection.findOne({
-            _id: result.insertedId,
+          // Update conversation last message
+          await conversationsCollection.updateOne(
+            { _id: new ObjectId(conversationId) },
+            {
+              $set: {
+                lastMessage: message,
+                lastMessageTime: new Date(),
+                lastMessageSender: new ObjectId(senderId),
+              },
+            }
+          );
+
+          // Emit message to all users in the conversation room
+          io.to(conversationId).emit("new-message", {
+            ...newMessage,
+            conversationId: conversationId,
+            senderId: senderId,
+            receiverId: receiverId,
           });
           console.log(
             "Stored message receiverId:",
@@ -303,7 +330,16 @@ async function run() {
             typeof storedMessage.receiverId
           );
 
-          // ... rest of your code
+          // Also send directly to receiver's socket if they're online
+          const receiverSocketId = onlineUsers.get(receiverId);
+          if (receiverSocketId) {
+            io.to(receiverSocketId).emit("new-message", {
+              ...newMessage,
+              conversationId: conversationId,
+              senderId: senderId,
+              receiverId: receiverId,
+            });
+          }
         } catch (error) {
           console.error("Error sending message:", error);
           socket.emit("message-error", { error: "Failed to send message" });
@@ -1676,6 +1712,109 @@ app.get("/checkBooking", async (req, res) => {
       }
     });
 
+    // review section
+
+    app.post("/api/reviews", async (req, res) => {
+      try {
+        const reviewData = req.body;
+        const newReview = await reviewCollection.insertOne(reviewData);
+        res.status(201).json({ success: true, data: newReview });
+      } catch (error) {
+        console.error("Error adding review:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+      }
+    });
+
+    // GET:  reviews with email
+    app.get("/api/reviews", async (req, res) => {
+      try {
+        const { reviewCardId } = req.query; // get ?reviewCardId=xyz
+        const query = reviewCardId ? { reviewCardId } : {}; // filter only if provided
+        const reviews = await reviewCollection.find(query).toArray();
+        res.json({ success: true, data: reviews });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // Update a review
+    app.put("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid ID" });
+        }
+
+        const result = await reviewCollection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          { $set: req.body },
+          { returnDocument: "after" }
+        );
+
+        if (!result.value) {
+          return res
+            .status(404)
+            .json({ success: false, message: "Review not found" });
+        }
+
+        res.status(200).json({ success: true, data: result.value });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
+
+    // Delete a review
+    app.delete("/api/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await reviewCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount === 0) {
+          return res
+            .status(404)
+            .json({ success: false, message: "Review not found" });
+        }
+
+        res
+          .status(200)
+          .json({ success: true, message: "Review deleted successfully" });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
+
+    app.get("/api/allReview", async (req, res) => {
+      const result = await reviewCollection.find().toArray();
+      res.send(result)
+    })
+
+    app.get("/api/hostReview", async (req, res) => {
+      try {
+        const { email } = req.query; // get ?email= from query params
+        let query = {};
+
+        // if email is provided, filter by it
+        if (email) {
+          query = { reviewEmail : email };
+        }
+
+        const result = await reviewCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
+
+
+
+
     /**
      * Delete experience (only by matching email)
      * DELETE /api/experiences/:id
@@ -1721,6 +1860,7 @@ app.get("/checkBooking", async (req, res) => {
   }
 }
 run().catch(console.dir);
+
 
 app.get("/", (req, res) => {
   res.send("Server is  running");
