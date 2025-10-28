@@ -1836,6 +1836,26 @@ async function run() {
       }
     });
 
+    app.get("/api/guestReview", async (req, res) => {
+      try {
+        const { email } = req.query; // get ?email= from query params
+        let query = {};
+
+        // if email is provided, filter by it
+        if (email) {
+          query = {
+            userEmail: email
+          };
+        }
+
+        const result = await reviewCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
+
 
 
 
