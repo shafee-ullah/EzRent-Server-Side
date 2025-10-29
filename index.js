@@ -1454,6 +1454,60 @@ async function run() {
       res.send(results);
     });
 
+    // Get payments for a specific host (by host email or user ID)
+    app.get("/api/payments/host/:hostIdentifier", async (req, res) => {
+      try {
+        const { hostIdentifier } = req.params;
+        
+        // First, find all properties owned by this host
+        let hostProperties;
+        
+        // Check if hostIdentifier is an email or ID
+        if (hostIdentifier.includes('@')) {
+          hostProperties = await propertiesCollection.find({ email: hostIdentifier }).toArray();
+        } else {
+          // Find user by ID first to get their email
+          const hostUser = await usersCollection.findOne({ _id: new ObjectId(hostIdentifier) });
+          if (!hostUser) {
+            return res.status(404).json({ error: "Host not found" });
+          }
+          hostProperties = await propertiesCollection.find({ email: hostUser.email }).toArray();
+        }
+
+        if (hostProperties.length === 0) {
+          return res.json([]);
+        }
+
+        // Get all property IDs
+        const propertyIds = hostProperties.map(p => p._id.toString());
+
+        // Find all bookings for these properties
+        const hostBookings = await bookinghotelCollection.find({
+          propertyId: { $in: propertyIds.map(id => new ObjectId(id)) }
+        }).toArray();
+
+        if (hostBookings.length === 0) {
+          return res.json([]);
+        }
+
+        // Get booking IDs
+        const bookingIds = hostBookings.map(b => b._id.toString());
+
+        // Find all payments for these bookings
+        const hostPayments = await paymentsCollection.find({
+          bookingId: { $in: bookingIds }
+        }).sort({ createdAt: -1 }).toArray();
+
+        res.json(hostPayments);
+      } catch (error) {
+        console.error("Error fetching host payments:", error);
+        res.status(500).json({
+          error: "Failed to fetch host payments",
+          message: error.message
+        });
+      }
+    });
+
     // Create Stripe Payment Intent
     app.post("/api/payment/create-payment-intent", async (req, res) => {
       try {
@@ -1826,6 +1880,26 @@ async function run() {
         // if email is provided, filter by it
         if (email) {
           query = { reviewEmail: email };
+        }
+
+        const result = await reviewCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
+
+    app.get("/api/guestReview", async (req, res) => {
+      try {
+        const { email } = req.query; // get ?email= from query params
+        let query = {};
+
+        // if email is provided, filter by it
+        if (email) {
+          query = {
+            userEmail: email
+          };
         }
 
         const result = await reviewCollection.find(query).toArray();

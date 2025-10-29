@@ -24,7 +24,7 @@ const storage = new CloudinaryStorage({
 // router.post("/upload", upload.array("photos", 5), (req, res) => {
 //   const urls = req.files.map(
 //     (file) =>
-//       `https://ezrent-server-side-production.up.railway.app/${file.path}`
+//       `http://localhost:5000/${file.path}`
 //   );
 //   res.json({ urls });
 // });
