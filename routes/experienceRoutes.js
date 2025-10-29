@@ -19,13 +19,25 @@ const storage = new CloudinaryStorage({
   },
 });
 
+// const upload = multer({ storage });
+
+// router.post("/upload", upload.array("photos", 5), (req, res) => {
+//   const urls = req.files.map(
+//     (file) =>
+//       `https://ezrent-server-side-production.up.railway.app/${file.path}`
+//   );
+//   res.json({ urls });
+// });
+
 const upload = multer({ storage });
 
 router.post("/upload", upload.array("photos", 5), (req, res) => {
-  const urls = req.files.map(
-    (file) =>
-      `https://ezrent-server-side-production.up.railway.app/${file.path}`
-  );
+  // Use the 'url' or 'secure_url' property from Cloudinary
+  const urls = req.files.map((file) => file.path);
+  
+  // Or for secure HTTPS URLs (recommended):
+  // const urls = req.files.map((file) => file.secure_url);
+  
   res.json({ urls });
 });
 

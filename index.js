@@ -93,7 +93,10 @@ async function run() {
       .db("ezrent")
       .collection("conversations");
     const messagesCollection = client.db("ezrent").collection("messages");
-    const reviewCollection = client.db("ezrent").collection("reviews")
+    const reviewCollection = client.db("ezrent").collection("reviews");
+    
+    // Notifications collection
+    const notificationsCollection = client.db("ezrent").collection("notifications");
 
 
     // ==================== SOCKET.IO SETUP ====================
@@ -678,6 +681,159 @@ async function run() {
       res.json(onlineUserIds);
     });
 
+    // ==================== NOTIFICATION API ROUTES ====================
+
+    // Helper function to create and send notification
+    async function createNotification(
+      userId,
+      type,
+      title,
+      message,
+      metadata = {},
+      actionUrl = null
+    ) {
+      try {
+        const notification = {
+          userId: new ObjectId(userId),
+          type,
+          title,
+          message,
+          metadata,
+          actionUrl,
+          read: false,
+          readAt: null,
+          createdAt: new Date(),
+        };
+
+        const result = await notificationsCollection.insertOne(notification);
+        notification._id = result.insertedId;
+
+        // Emit to user via Socket.IO
+        const userSocketId = onlineUsers.get(userId.toString());
+        if (userSocketId) {
+          io.to(userSocketId).emit("new-notification", notification);
+        }
+
+        // Also emit to user room if they joined with their userId
+        io.to(userId.toString()).emit("new-notification", notification);
+
+        console.log(`📬 Notification created for user ${userId}:`, notification.title);
+        return notification;
+      } catch (error) {
+        console.error("Error creating notification:", error);
+        throw error;
+      }
+    }
+
+    // Get user notifications
+    app.get("/api/notifications/:userId", async (req, res) => {
+      try {
+        const { userId } = req.params;
+        const { limit = 50, unreadOnly = false } = req.query;
+
+        const query = { userId: new ObjectId(userId) };
+        if (unreadOnly === "true") {
+          query.read = false;
+        }
+
+        const notifications = await notificationsCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .toArray();
+
+        res.json({ notifications, count: notifications.length });
+      } catch (error) {
+        console.error("Error fetching notifications:", error);
+        res.status(500).json({ error: "Failed to fetch notifications" });
+      }
+    });
+
+    // Mark notification as read
+    app.patch("/api/notifications/:notificationId/read", async (req, res) => {
+      try {
+        const { notificationId } = req.params;
+
+        const notification = await notificationsCollection.findOneAndUpdate(
+          { _id: new ObjectId(notificationId) },
+          { $set: { read: true, readAt: new Date() } },
+          { returnDocument: "after" }
+        );
+
+        if (!notification) {
+          return res.status(404).json({ error: "Notification not found" });
+        }
+
+        res.json(notification);
+      } catch (error) {
+        console.error("Error marking notification as read:", error);
+        res.status(500).json({ error: "Failed to mark notification as read" });
+      }
+    });
+
+    // Mark all notifications as read
+    app.patch("/api/notifications/:userId/read-all", async (req, res) => {
+      try {
+        const { userId } = req.params;
+
+        await notificationsCollection.updateMany(
+          { userId: new ObjectId(userId), read: false },
+          { $set: { read: true, readAt: new Date() } }
+        );
+
+        res.json({ success: true, message: "All notifications marked as read" });
+      } catch (error) {
+        console.error("Error marking all notifications as read:", error);
+        res
+          .status(500)
+          .json({ error: "Failed to mark all notifications as read" });
+      }
+    });
+
+    // Delete notification
+    app.delete("/api/notifications/:notificationId", async (req, res) => {
+      try {
+        const { notificationId } = req.params;
+
+        await notificationsCollection.deleteOne({
+          _id: new ObjectId(notificationId),
+        });
+        res.json({ success: true, message: "Notification deleted" });
+      } catch (error) {
+        console.error("Error deleting notification:", error);
+        res.status(500).json({ error: "Failed to delete notification" });
+      }
+    });
+
+    // Test notification endpoint (for development/testing)
+    app.post("/api/notifications/test", async (req, res) => {
+      try {
+        const { userId, type, title, message } = req.body;
+
+        if (!userId) {
+          return res.status(400).json({ error: "userId is required" });
+        }
+
+        const notification = await createNotification(
+          userId,
+          type || "system_alert",
+          title || "🎉 Test Notification",
+          message || "This is a test notification from the system",
+          { test: true },
+          null
+        );
+
+        res.json({
+          success: true,
+          message: "Test notification sent",
+          notification,
+        });
+      } catch (error) {
+        console.error("Error sending test notification:", error);
+        res.status(500).json({ error: "Failed to send test notification" });
+      }
+    });
+
     // Add property to wishlist
     app.post("/api/wishlist", async (req, res) => {
       try {
@@ -903,7 +1059,38 @@ async function run() {
       try {
         const { email } = req.query;
         const query = email ? { email } : {}; // filter if email provided
-        const bookings = await bookinghotelCollection.find(query).toArray();
+        
+        // Use aggregation to include property details
+        const bookings = await bookinghotelCollection
+          .aggregate([
+            { $match: query },
+            {
+              $lookup: {
+                from: "properties",
+                localField: "propertyId",
+                foreignField: "_id",
+                as: "propertyDetails",
+              },
+            },
+            {
+              $unwind: {
+                path: "$propertyDetails",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $addFields: {
+                propertyName: {
+                  $ifNull: [
+                    "$propertyDetails.name",
+                    { $ifNull: ["$propertyDetails.title", "$title"] },
+                  ],
+                },
+              },
+            },
+          ])
+          .toArray();
+        
         res.send(bookings);
       } catch (error) {
         console.error("Error fetching bookings:", error);
@@ -951,6 +1138,89 @@ async function run() {
         const updatedBooking = await bookinghotelCollection.findOne({
           _id: new ObjectId(id),
         });
+
+        // 🔔 Send notification based on status change
+        try {
+          // Get property details
+          const property = await propertiesCollection.findOne({
+            _id: updatedBooking.propertyId,
+          });
+
+          if (property && updatedBooking.email) {
+            const guest = await usersCollection.findOne({
+              email: updatedBooking.email,
+            });
+
+            if (guest) {
+              if (status === "confirmed") {
+                // Notify guest about booking confirmation
+                await createNotification(
+                  guest._id,
+                  "booking_confirmed",
+                  "✅ Booking Confirmed!",
+                  `Your booking for ${property.name || property.title} has been confirmed by the host`,
+                  {
+                    bookingId: updatedBooking._id,
+                    propertyId: property._id,
+                  },
+                  `/dashboard/guest/bookings`
+                );
+              } else if (status === "cancelled") {
+                // Notify guest about booking cancellation
+                await createNotification(
+                  guest._id,
+                  "booking_cancelled",
+                  "❌ Booking Cancelled",
+                  `Your booking for ${property.name || property.title} has been cancelled`,
+                  {
+                    bookingId: updatedBooking._id,
+                    propertyId: property._id,
+                  },
+                  `/dashboard/guest/bookings`
+                );
+              }
+            }
+
+            // Get host information
+            const host = await usersCollection.findOne({
+              email: property.email,
+            });
+            
+            if (host) {
+              if (status === "confirmed") {
+                // Notify host when they confirm a booking
+                await createNotification(
+                  host._id,
+                  "booking_confirmed",
+                  "🎉 Booking Confirmed",
+                  `You confirmed the booking for ${property.name || property.title}`,
+                  {
+                    bookingId: updatedBooking._id,
+                    propertyId: property._id,
+                  },
+                  `/dashboard/host/bookings`
+                );
+              } else if (status === "cancelled") {
+                // Notify host when guest cancels the booking
+                await createNotification(
+                  host._id,
+                  "booking_cancelled",
+                  "❌ Guest Cancelled Booking",
+                  `${guest?.name || 'A guest'} cancelled their booking for ${property.name || property.title}`,
+                  {
+                    bookingId: updatedBooking._id,
+                    propertyId: property._id,
+                    guestEmail: updatedBooking.email,
+                  },
+                  `/dashboard/host/bookings`
+                );
+              }
+            }
+          }
+        } catch (notifError) {
+          console.error("Error sending status update notifications:", notifError);
+        }
+
         res.json({ booking: updatedBooking });
       } catch (err) {
         console.error("Error updating booking:", err);
@@ -1161,12 +1431,65 @@ async function run() {
           bookingData.propertyId = new ObjectId(bookingData.id);
         }
 
-        // hello
         // Add timestamp
         bookingData.createdAt = new Date();
         bookingData.updatedAt = new Date();
 
         const result = await bookinghotelCollection.insertOne(bookingData);
+
+        // 🔔 Send notifications
+        try {
+          // Get property details
+          const property = await propertiesCollection.findOne({
+            _id: bookingData.propertyId,
+          });
+
+          if (property) {
+            // Find host user
+            const host = await usersCollection.findOne({
+              email: property.email,
+            });
+
+            if (host) {
+              // Notify host about new booking request
+              await createNotification(
+                host._id,
+                "booking_request",
+                "🏠 New Booking Request",
+                `You have a new booking request for ${property.name || property.title}`,
+                {
+                  bookingId: result.insertedId,
+                  propertyId: property._id,
+                },
+                `/dashboard/host/bookings`
+              );
+            }
+
+            // Find guest user and notify them
+            if (bookingData.email) {
+              const guest = await usersCollection.findOne({
+                email: bookingData.email,
+              });
+              if (guest) {
+                await createNotification(
+                  guest._id,
+                  "booking_confirmed",
+                  "✅ Booking Request Sent",
+                  `Your booking request for ${property.name || property.title} has been sent to the host`,
+                  {
+                    bookingId: result.insertedId,
+                    propertyId: property._id,
+                  },
+                  `/dashboard/guest/bookings`
+                );
+              }
+            }
+          }
+        } catch (notifError) {
+          console.error("Error sending booking notifications:", notifError);
+          // Don't fail the booking if notification fails
+        }
+
         res.send(result);
       } catch (error) {
         console.error("Error creating booking:", error);
@@ -1454,6 +1777,60 @@ async function run() {
       res.send(results);
     });
 
+    // Get payments for a specific host (by host email or user ID)
+    app.get("/api/payments/host/:hostIdentifier", async (req, res) => {
+      try {
+        const { hostIdentifier } = req.params;
+        
+        // First, find all properties owned by this host
+        let hostProperties;
+        
+        // Check if hostIdentifier is an email or ID
+        if (hostIdentifier.includes('@')) {
+          hostProperties = await propertiesCollection.find({ email: hostIdentifier }).toArray();
+        } else {
+          // Find user by ID first to get their email
+          const hostUser = await usersCollection.findOne({ _id: new ObjectId(hostIdentifier) });
+          if (!hostUser) {
+            return res.status(404).json({ error: "Host not found" });
+          }
+          hostProperties = await propertiesCollection.find({ email: hostUser.email }).toArray();
+        }
+
+        if (hostProperties.length === 0) {
+          return res.json([]);
+        }
+
+        // Get all property IDs
+        const propertyIds = hostProperties.map(p => p._id.toString());
+
+        // Find all bookings for these properties
+        const hostBookings = await bookinghotelCollection.find({
+          propertyId: { $in: propertyIds.map(id => new ObjectId(id)) }
+        }).toArray();
+
+        if (hostBookings.length === 0) {
+          return res.json([]);
+        }
+
+        // Get booking IDs
+        const bookingIds = hostBookings.map(b => b._id.toString());
+
+        // Find all payments for these bookings
+        const hostPayments = await paymentsCollection.find({
+          bookingId: { $in: bookingIds }
+        }).sort({ createdAt: -1 }).toArray();
+
+        res.json(hostPayments);
+      } catch (error) {
+        console.error("Error fetching host payments:", error);
+        res.status(500).json({
+          error: "Failed to fetch host payments",
+          message: error.message
+        });
+      }
+    });
+
     // Create Stripe Payment Intent
     app.post("/api/payment/create-payment-intent", async (req, res) => {
       try {
@@ -1540,6 +1917,65 @@ async function run() {
 
         // Store payment in MongoDB
         const result = await paymentsCollection.insertOne(paymentData);
+
+        // 🔔 Send payment notifications
+        if (result.acknowledged && status === "succeeded") {
+          try {
+            // Get booking details
+            const booking = await bookinghotelCollection.findOne({
+              _id: new ObjectId(bookingId),
+            });
+
+            if (booking) {
+              // Get property details
+              const property = await propertiesCollection.findOne({
+                _id: booking.propertyId,
+              });
+
+              if (property) {
+                // Notify guest about successful payment
+                const guest = await usersCollection.findOne({
+                  email: booking.email,
+                });
+                if (guest) {
+                  await createNotification(
+                    guest._id,
+                    "payment_received",
+                    "💳 Payment Successful",
+                    `Your payment of $${amount} for ${property.name || property.title} has been processed successfully`,
+                    {
+                      paymentId: result.insertedId,
+                      bookingId: booking._id,
+                      amount: parseFloat(amount),
+                    },
+                    `/dashboard/guest/bookings`
+                  );
+                }
+
+                // Notify host about payment received
+                const host = await usersCollection.findOne({
+                  email: property.email,
+                });
+                if (host) {
+                  await createNotification(
+                    host._id,
+                    "payment_received",
+                    "💰 Payment Received",
+                    `You received $${amount} for ${property.name || property.title}`,
+                    {
+                      paymentId: result.insertedId,
+                      bookingId: booking._id,
+                      amount: parseFloat(amount),
+                    },
+                    `/dashboard/host/earnings`
+                  );
+                }
+              }
+            }
+          } catch (notifError) {
+            console.error("Error sending payment notifications:", notifError);
+          }
+        }
 
         if (result.acknowledged) {
           res.json({
@@ -1892,6 +2328,30 @@ async function run() {
       }
     });
     /* ---------- End Experiences feature ---------- */
+
+    // ==================== NOTIFICATION CLEANUP TASK ====================
+    
+    // Clean up old notifications (run every 24 hours)
+    setInterval(async () => {
+      try {
+        // Delete read notifications older than 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const result = await notificationsCollection.deleteMany({
+          createdAt: { $lt: thirtyDaysAgo },
+          read: true,
+        });
+
+        if (result.deletedCount > 0) {
+          console.log(`✅ Cleaned up ${result.deletedCount} old notifications`);
+        }
+      } catch (error) {
+        console.error("Error cleaning up notifications:", error);
+      }
+    }, 24 * 60 * 60 * 1000); // Run daily
+
+    console.log("✅ Notification system initialized");
 
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
